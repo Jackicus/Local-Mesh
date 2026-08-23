@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+
+# Production build outputs
+dist/
+dist-electron/
+release/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Claude Code local (machine-specific) settings
+.claude/settings.local.json
+
+# Editor files
+.vscode/*
+!.vscode/extensions.json
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.DS_Store

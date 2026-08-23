@@ -1,0 +1,27 @@
+/* ==========================================================================
+   Master Application Stylesheet Bundle
+   ========================================================================== */
+
+/* Modern Cascade Layer Priority Order */
+@layer reset, tokens, primitives, shell, views, overlays;
+
+/* 1. Custom Fonts */
+@import '../fonts/fonts.css';
+
+/* 2. Design Tokens, Theme Modes & Accent Variables */
+@import './variables.css';
+
+/* 3. Base Reset, Typography & Custom Scrollbar */
+@import './reset.css';
+
+/* 4. Reusable UI Primitives (Buttons, Cards, Badges, Kbd) */
+@import './primitives.css';
+
+/* 5. Desktop Shell, TopBar, Resizable LeftDock & Window Controls */
+@import './shell.css';
+
+/* 6. Page Screens, Grids & View Layouts */
+@import './views.css';
+
+/* 7. Overlay Primitives (Modals, Toasts, Context Menus, Tooltips) */
+@import './overlays.css';

@@ -1,0 +1,301 @@
+/* ==========================================================================
+   Desktop Shell Layout & Window Chrome
+   Three sheets: the titlebar's fill covers the content, the left dock covers
+   the fill (it runs the full window height), and the titlebar's transparent
+   controls/drag surface cover the dock. z-order lives in variables.css.
+   ========================================================================== */
+
+@layer shell {
+  .app-shell {
+    position: relative;
+    display: flex;
+    height: 100vh;
+    width: 100vw;
+    overflow: hidden;
+    background-color: var(--bg-app);
+  }
+
+  /* --------------------------------------------------------------------------
+     Titlebar Fill (the bar's colour, below the dock)
+     -------------------------------------------------------------------------- */
+  .titlebar-fill {
+    position: absolute;
+    top: 0;
+    right: 0;
+    left: 0;
+    z-index: var(--z-titlebar-fill);
+    height: var(--topbar-height);
+    background-color: var(--bg-app);
+  }
+
+  /* --------------------------------------------------------------------------
+     Top Bar (transparent controls + drag surface, above the dock)
+     -------------------------------------------------------------------------- */
+  .top-bar {
+    position: absolute;
+    top: 0;
+    right: 0;
+    left: 0;
+    z-index: var(--z-titlebar);
+    display: flex;
+    align-items: stretch;
+    justify-content: space-between;
+    height: var(--topbar-height);
+    padding: 5px;
+    gap: 6px;
+    -webkit-app-region: drag;
+    user-select: none;
+  }
+
+  .top-bar button {
+    -webkit-app-region: no-drag;
+  }
+
+  .top-bar-left {
+    display: flex;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .top-bar-center {
+    flex: 1;
+    pointer-events: none;
+  }
+
+  .top-bar-right {
+    display: flex;
+    align-items: stretch;
+    gap: 4px;
+  }
+
+  .app-title-group {
+    display: flex;
+    align-items: center;
+    align-self: center;
+    cursor: default;
+  }
+
+  /* Title-block lettering: the window name as an annotation */
+  .app-title {
+    font-family: var(--font-mono);
+    font-size: 0.786rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    color: var(--text-secondary);
+  }
+
+  /* Titlebar buttons take their size from the bar: stretch + aspect-ratio,
+     so there is no number to keep in step with --topbar-height */
+  .icon-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: auto;
+    height: auto;
+    aspect-ratio: 1;
+    border-radius: var(--radius-md);
+    color: var(--text-secondary);
+    transition: background-color var(--transition-fast), color var(--transition-fast), transform var(--transition-fast);
+  }
+
+  /* One tone that reads over both the fill and the dock's surface */
+  .icon-btn:hover {
+    background-color: var(--bg-surface-hover);
+    color: var(--text-primary);
+  }
+
+  .icon-btn:active {
+    transform: scale(0.92);
+  }
+
+  .icon-btn.active {
+    background-color: var(--accent-subtle);
+    color: var(--accent);
+  }
+
+  /* --------------------------------------------------------------------------
+     Window Control Buttons (Minimize, Maximize, Close)
+     -------------------------------------------------------------------------- */
+  .window-controls {
+    display: flex;
+    align-items: stretch;
+    gap: 4px;
+  }
+
+  .window-control-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: auto;
+    height: auto;
+    aspect-ratio: 1.15;
+    border-radius: var(--radius-md);
+    color: var(--text-secondary);
+    transition: background-color var(--transition-fast), color var(--transition-fast);
+  }
+
+  .window-control-btn:hover {
+    background-color: var(--bg-surface-hover);
+    color: var(--text-primary);
+  }
+
+  .window-control-btn.close:hover {
+    background-color: var(--danger);
+    color: #ffffff;
+  }
+
+  /* --------------------------------------------------------------------------
+     Left Dock (full window height; its colour shows behind the titlebar's
+     left controls. Collapses to zero width.)
+     -------------------------------------------------------------------------- */
+  .left-dock {
+    position: relative;
+    z-index: var(--z-left-dock);
+    flex-shrink: 0;
+    width: var(--leftdock-width);
+    height: 100%;
+    padding-top: var(--topbar-height);
+    overflow: hidden;
+    background-color: var(--bg-surface);
+    transition: width var(--transition-base);
+    will-change: width;
+  }
+
+  .left-dock.is-resizing {
+    transition: none !important;
+  }
+
+  .left-dock.collapsed {
+    width: 0 !important;
+  }
+
+  /* visibility (not display) keeps the box so the width can animate, while
+     taking the content out of the tab order */
+  .left-dock.collapsed .left-dock-inner {
+    visibility: hidden;
+  }
+
+  /* Fixed width (stamped inline to the current dock width) so the content
+     doesn't reflow while the dock animates closed */
+  .left-dock-inner {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+  }
+
+  .left-dock-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px 6px;
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
+  .dock-item {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    width: 100%;
+    height: 38px;
+    min-height: 38px;
+    padding: 0;
+    border-radius: var(--radius-md);
+    color: var(--text-secondary);
+    font-size: 0.929rem;
+    font-weight: 500;
+    text-align: left;
+    transition: background-color var(--transition-fast), color var(--transition-fast);
+    white-space: nowrap;
+    overflow: hidden;
+    cursor: pointer;
+    position: relative;
+    text-box: trim-both cap alphabetic;
+  }
+
+  .dock-item:hover {
+    background-color: var(--bg-surface-hover);
+    color: var(--text-primary);
+  }
+
+  /* Selected entry stays in the neutral text ramp; the index tick alone carries the accent */
+  .dock-item.active {
+    background-color: var(--bg-surface-active);
+    color: var(--text-primary);
+    font-weight: 600;
+  }
+
+  .dock-item.active::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 9px;
+    bottom: 9px;
+    width: 2px;
+    border-radius: 1px;
+    background-color: var(--accent);
+  }
+
+  .dock-item-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    min-width: 44px;
+    max-width: 44px;
+    height: 38px;
+    flex-shrink: 0;
+  }
+
+  .dock-item-label {
+    flex: 1;
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding-right: 12px;
+  }
+
+  .left-dock-footer {
+    padding: 8px 6px;
+    border-top: 1px solid var(--border-subtle);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    overflow: hidden;
+  }
+
+  /* --------------------------------------------------------------------------
+     Draggable Split Resizer Handle (Expanded Invisible Grab Area)
+     -------------------------------------------------------------------------- */
+  .dock-resizer {
+    position: absolute;
+    top: var(--topbar-height);
+    right: 0;
+    bottom: 0;
+    width: 4px;
+    cursor: col-resize;
+    z-index: 20;
+    background-color: transparent;
+    transition: background-color var(--transition-fast);
+  }
+
+  .dock-resizer:hover,
+  .dock-resizer.resizing {
+    background-color: var(--accent);
+  }
+
+  /* --------------------------------------------------------------------------
+     Main Content Area (scrolls under the titlebar's opaque fill)
+     -------------------------------------------------------------------------- */
+  .shell-content {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    overflow-y: auto;
+    padding: calc(var(--topbar-height) + 20px) 24px 24px;
+    background-color: var(--bg-app);
+  }
+}

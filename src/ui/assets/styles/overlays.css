@@ -1,0 +1,541 @@
+/* ==========================================================================
+   Overlay Primitives (Modals, Toasts, Context Menus, Tooltips)
+   ========================================================================== */
+
+@layer overlays {
+  /* --------------------------------------------------------------------------
+     1. Modal Dialog & Backdrop
+     -------------------------------------------------------------------------- */
+  .ui-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.65);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: var(--z-modal);
+    padding: 16px;
+    animation: modalBackdropFade 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .ui-modal-container {
+    background-color: var(--bg-surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 20px 45px rgba(0, 0, 0, 0.5);
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-height: 88vh;
+    overflow: hidden;
+    animation: modalScaleUp 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .ui-modal-sm {
+    max-width: 380px;
+  }
+
+  .ui-modal-md {
+    max-width: 480px;
+  }
+
+  .ui-modal-lg {
+    max-width: 640px;
+  }
+
+  .ui-modal-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .ui-modal-header-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--accent);
+  }
+
+  .ui-modal-header-text {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .ui-modal-title {
+    font-size: 1.071rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+  }
+
+  .ui-modal-subtitle {
+    font-size: 0.857rem;
+    color: var(--text-muted);
+    margin-top: 2px;
+    text-wrap: pretty;
+  }
+
+  .ui-modal-close {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 6px;
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color var(--transition-fast), color var(--transition-fast);
+  }
+
+  .ui-modal-close:hover {
+    color: var(--text-primary);
+    background-color: var(--bg-surface-hover);
+  }
+
+  /* Header, body, and footer share one 16px vertical rhythm so both divider
+     lines sit with even space on each side */
+  .ui-modal-body {
+    padding: 16px 20px;
+    overflow-y: auto;
+    color: var(--text-secondary);
+    font-size: 0.929rem;
+    line-height: 1.5;
+    text-wrap: pretty;
+  }
+
+  .ui-modal-footer {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 16px 20px;
+    border-top: 1px solid var(--border-subtle);
+    background-color: var(--bg-app);
+  }
+
+  .ui-modal-footer-right {
+    justify-content: flex-end;
+  }
+
+  .ui-modal-footer-left {
+    justify-content: flex-start;
+  }
+
+  .ui-modal-footer-space-between {
+    justify-content: space-between;
+  }
+
+  @keyframes modalBackdropFade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes modalScaleUp {
+    from {
+      opacity: 0;
+      transform: scale(0.95) translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1) translateY(0);
+    }
+  }
+
+  /* --------------------------------------------------------------------------
+     2. Toast Notification Stack
+     -------------------------------------------------------------------------- */
+  .ui-toast-container {
+    position: fixed;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    z-index: var(--z-toast);
+    pointer-events: none;
+    max-width: 360px;
+    width: 100%;
+  }
+
+  .ui-toast-pos-bottom-right {
+    bottom: 16px;
+    right: 16px;
+    align-items: flex-end;
+  }
+
+  .ui-toast-pos-bottom-left {
+    bottom: 16px;
+    left: 16px;
+    align-items: flex-start;
+  }
+
+  .ui-toast-pos-top-right {
+    top: 16px;
+    right: 16px;
+    align-items: flex-end;
+  }
+
+  .ui-toast-pos-top-left {
+    top: 16px;
+    left: 16px;
+    align-items: flex-start;
+  }
+
+  .ui-toast-item {
+    pointer-events: auto;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 12px 14px;
+    background-color: var(--bg-surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-md);
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+    color: var(--text-primary);
+    width: 100%;
+    animation: toastSlideIn 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .ui-toast-leading {
+    display: flex;
+    align-items: center;
+    margin-top: 1px;
+    flex-shrink: 0;
+  }
+
+  .ui-toast-icon.success {
+    color: var(--success);
+  }
+
+  .ui-toast-icon.danger {
+    color: var(--danger);
+  }
+
+  .ui-toast-icon.warning {
+    color: var(--warning);
+  }
+
+  .ui-toast-icon.info {
+    color: var(--accent);
+  }
+
+  .ui-toast-content {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .ui-toast-title {
+    font-size: 0.929rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    text-wrap: balance;
+  }
+
+  .ui-toast-message {
+    font-size: 0.857rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
+    text-wrap: pretty;
+  }
+
+  .ui-toast-close {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 3px;
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color var(--transition-fast), color var(--transition-fast);
+    margin-left: 4px;
+  }
+
+  .ui-toast-close:hover {
+    color: var(--text-primary);
+    background-color: var(--bg-surface-hover);
+  }
+
+  /* Exit reads as a clear dismissal: slide out to the right while fading.
+     Duration must match EXIT_ANIMATION_MS in toastStore.ts */
+  .ui-toast-item.exiting {
+    animation: toastSlideOut 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    pointer-events: none;
+  }
+
+  /* Slot rows grow 0fr -> 1fr on entry (so existing toasts slide up rather
+     than jump when a new one arrives) and collapse 1fr -> 0fr on exit, with a
+     negative margin absorbing the container gap */
+  .ui-toast-slot {
+    display: grid;
+    grid-template-rows: 1fr;
+    width: 100%;
+    animation: toastSlotGrow 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+    transition: grid-template-rows 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+      margin-bottom 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .ui-toast-slot.exiting {
+    grid-template-rows: 0fr;
+    margin-bottom: -8px;
+  }
+
+  /* Unpadded clip layer: lets the row truly reach zero height (the padded toast
+     itself can't shrink below its padding). Clips only while exiting so the
+     resting box-shadow stays intact. */
+  .ui-toast-clip {
+    min-height: 0;
+  }
+
+  .ui-toast-slot.exiting .ui-toast-clip {
+    overflow: hidden;
+  }
+
+  @keyframes toastSlideIn {
+    from {
+      opacity: 0;
+      transform: translateY(12px) scale(0.96);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  @keyframes toastSlideOut {
+    from {
+      opacity: 1;
+      transform: translateX(0);
+    }
+    to {
+      opacity: 0;
+      transform: translateX(32px);
+    }
+  }
+
+  @keyframes toastSlotGrow {
+    from {
+      grid-template-rows: 0fr;
+      margin-bottom: -8px;
+    }
+    to {
+      grid-template-rows: 1fr;
+      margin-bottom: 0;
+    }
+  }
+
+  /* --------------------------------------------------------------------------
+     3. Context Menu (Floating Right-Click)
+     -------------------------------------------------------------------------- */
+  .ui-context-menu {
+    background-color: var(--bg-surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-md);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
+    padding: 4px;
+    min-width: 190px;
+    max-width: 280px;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    animation: contextMenuPop 0.12s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .ui-context-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 6px 10px;
+    font-size: 0.857rem;
+    font-weight: 500;
+    color: var(--text-primary);
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    text-align: left;
+    transition: background-color var(--transition-fast), color var(--transition-fast);
+    user-select: none;
+    text-box: trim-both cap alphabetic;
+  }
+
+  .ui-context-menu-item:hover:not(:disabled) {
+    background-color: var(--accent);
+    color: #ffffff;
+  }
+
+  .ui-context-menu-item:hover:not(:disabled) .ui-context-menu-shortcut {
+    color: rgba(255, 255, 255, 0.85);
+  }
+
+  .ui-context-menu-item.danger {
+    color: var(--danger);
+  }
+
+  .ui-context-menu-item.danger:hover:not(:disabled) {
+    background-color: var(--danger);
+    color: #ffffff;
+  }
+
+  .ui-context-menu-item:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .ui-context-menu-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .ui-context-menu-label {
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .ui-context-menu-shortcut {
+    font-size: 0.786rem;
+    font-family: var(--font-mono);
+    color: var(--text-muted);
+    margin-left: 12px;
+    letter-spacing: -0.02em;
+  }
+
+  .ui-context-menu-separator {
+    height: 1px;
+    background-color: var(--border-subtle);
+    margin: 3px 0;
+  }
+
+  @keyframes contextMenuPop {
+    from {
+      opacity: 0;
+      transform: scale(0.96);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  /* --------------------------------------------------------------------------
+     4. Tooltips
+     -------------------------------------------------------------------------- */
+  .ui-tooltip-wrapper {
+    position: relative;
+    display: inline-flex;
+    -webkit-app-region: no-drag;
+  }
+
+  /* Tooltips speak in the annotation voice */
+  .ui-tooltip-bubble {
+    position: absolute;
+    pointer-events: none;
+    z-index: var(--z-tooltip);
+    background-color: var(--bg-surface-hover);
+    border: 1px solid var(--border-strong);
+    color: var(--text-primary);
+    padding: 4px 8px;
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+    font-size: 0.786rem;
+    font-weight: 500;
+    white-space: nowrap;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    animation: tooltipFade 0.14s ease;
+    text-box: trim-both cap alphabetic;
+  }
+
+  [data-theme="light"] .ui-tooltip-bubble {
+    background-color: var(--bg-surface);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+  }
+
+  /* --tooltip-shift is the component's viewport clamp: 0 normally, a
+     corrective offset when the bubble would hang off a window edge */
+  .ui-tooltip-top {
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(calc(-50% + var(--tooltip-shift, 0px))) translateY(-6px);
+  }
+
+  .ui-tooltip-bottom {
+    top: 100%;
+    left: 50%;
+    transform: translateX(calc(-50% + var(--tooltip-shift, 0px))) translateY(6px);
+  }
+
+  .ui-tooltip-left {
+    right: 100%;
+    top: 50%;
+    transform: translateY(-50%) translateX(-6px);
+  }
+
+  .ui-tooltip-right {
+    left: 100%;
+    top: 50%;
+    transform: translateY(-50%) translateX(6px);
+  }
+
+  /* Edge anchoring: keeps bubbles on controls near a window edge from clipping offscreen */
+  .ui-tooltip-top.ui-tooltip-align-start,
+  .ui-tooltip-bottom.ui-tooltip-align-start {
+    left: 0;
+    right: auto;
+  }
+
+  .ui-tooltip-top.ui-tooltip-align-end,
+  .ui-tooltip-bottom.ui-tooltip-align-end {
+    left: auto;
+    right: 0;
+  }
+
+  .ui-tooltip-top.ui-tooltip-align-start,
+  .ui-tooltip-top.ui-tooltip-align-end {
+    transform: translateX(var(--tooltip-shift, 0px)) translateY(-6px);
+  }
+
+  .ui-tooltip-bottom.ui-tooltip-align-start,
+  .ui-tooltip-bottom.ui-tooltip-align-end {
+    transform: translateX(var(--tooltip-shift, 0px)) translateY(6px);
+  }
+
+  .ui-tooltip-shortcut {
+    font-size: 0.714rem;
+    padding: 1px 4px;
+    background-color: var(--bg-app);
+    border-radius: 3px;
+    border: 1px solid var(--border-subtle);
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+  }
+
+  /* Opacity only: animating transform here would override the positional
+     translate during the animation and make the bubble jump into place */
+  @keyframes tooltipFade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+}

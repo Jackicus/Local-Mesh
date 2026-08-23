@@ -1,0 +1,748 @@
+/* ==========================================================================
+   UI Primitives (Buttons, Cards, Badges, Kbd, Forms)
+   ========================================================================== */
+
+@layer primitives {
+  /* --------------------------------------------------------------------------
+     Buttons
+     -------------------------------------------------------------------------- */
+  /* align-self keeps a lone button inline in stretch-aligned flex columns
+     (like a card body) — full width is an explicit opt-in via .btn-full */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    align-self: flex-start;
+    gap: 8px;
+    font-weight: 500;
+    border-radius: var(--radius-md);
+    transition: transform var(--transition-fast), background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+    white-space: nowrap;
+    text-box: trim-both cap alphabetic;
+  }
+
+  /* Disabled convention shared with Toggle/Slider/ContextMenu */
+  .btn:disabled,
+  .ui-segmented-item:disabled,
+  .ui-input-wrapper.disabled,
+  .ui-select-wrapper.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .btn-full {
+    width: 100%;
+    align-self: stretch;
+  }
+
+  /* A distributed button row: full width, evenly split — the tab-bar idiom
+     for actions. Wraps plain Buttons or Tooltip-wrapped ones. */
+  .ui-btn-row {
+    display: flex;
+    gap: 8px;
+    width: 100%;
+  }
+
+  .ui-btn-row > .btn,
+  .ui-btn-row > .ui-tooltip-wrapper {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  .ui-btn-row > .ui-tooltip-wrapper .btn {
+    width: 100%;
+  }
+
+  .btn:active:not(:disabled) {
+    transform: scale(0.97);
+  }
+
+  .btn-sm {
+    padding: 4px 12px;
+    font-size: 0.857rem;
+    min-width: var(--btn-sm-min-width, 72px);
+  }
+
+  .btn-md {
+    padding: 6px 16px;
+    font-size: 0.929rem;
+    min-width: var(--btn-md-min-width, 84px);
+  }
+
+  .btn-lg {
+    padding: 10px 20px;
+    font-size: 1rem;
+    min-width: var(--btn-lg-min-width, 104px);
+  }
+
+  .btn-icon-only {
+    min-width: auto;
+    padding: 6px;
+  }
+
+  .btn-primary {
+    background-color: var(--accent);
+    color: var(--accent-text, #ffffff);
+    font-weight: 600;
+  }
+
+  .btn-primary:hover:not(:disabled) {
+    background-color: var(--accent-hover);
+  }
+
+  .btn-secondary {
+    background-color: var(--bg-surface-hover);
+    border: 1px solid var(--border-strong);
+    color: var(--text-primary);
+  }
+
+  .btn-secondary:hover:not(:disabled) {
+    background-color: var(--border-strong);
+  }
+
+  .btn-subtle {
+    background-color: transparent;
+    color: var(--text-secondary);
+  }
+
+  .btn-subtle:hover:not(:disabled) {
+    background-color: var(--bg-surface-hover);
+    color: var(--text-primary);
+  }
+
+  .btn-danger {
+    background-color: var(--danger-subtle);
+    color: var(--danger);
+    border: 1px solid oklch(from var(--danger) l c h / 25%);
+  }
+
+  .btn-danger:hover:not(:disabled) {
+    background-color: var(--danger);
+    color: #ffffff;
+  }
+
+  .btn-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* --------------------------------------------------------------------------
+     Cards (Compound Architecture)
+     -------------------------------------------------------------------------- */
+  .ui-card {
+    background-color: var(--bg-block);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    container: card / inline-size;
+    transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+  }
+
+  .ui-card:hover {
+    border-color: var(--border-strong);
+  }
+
+  .ui-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .ui-card-expandable-header {
+    cursor: pointer;
+    user-select: none;
+    border-radius: var(--radius-sm);
+    transition: opacity var(--transition-fast);
+  }
+
+  .ui-card-expandable-header:hover {
+    opacity: 0.85;
+  }
+
+  .ui-card-title-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .ui-card-icon {
+    color: var(--accent);
+    display: flex;
+    flex-shrink: 0;
+  }
+
+  .ui-card-title {
+    font-size: 1.071rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    text-wrap: balance;
+  }
+
+  .ui-card-subtitle {
+    font-size: 0.857rem;
+    color: var(--text-muted);
+    text-wrap: pretty;
+  }
+
+  .ui-card-action-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .ui-card-chevron {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    transition: transform var(--transition-base), color var(--transition-fast);
+  }
+
+  .ui-card-chevron.expanded {
+    transform: rotate(180deg);
+    color: var(--accent);
+  }
+
+  /* flex: 1 lets the body absorb the extra height when grid neighbors stretch
+     a card taller, so a footer inside it can pin to the bottom edge */
+  .ui-card-body {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    flex: 1;
+  }
+
+  /* margin-top: auto pins the footer to the card's bottom edge, so footers in
+     side-by-side cards line up; padding-top matches the card gap above the
+     rule, so at rest the divider sits with even space on both sides */
+  .ui-card-footer {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: auto;
+    padding-top: 14px;
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  /* --------------------------------------------------------------------------
+     Badges & Keyboard Key (Kbd)
+     -------------------------------------------------------------------------- */
+  /* Badges read as inked stamps: bordered, mono, tracked caps */
+  .ui-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    width: fit-content;
+    padding: 4px 8px;
+    border-radius: var(--radius-sm);
+    border: 1px solid;
+    font-family: var(--font-mono);
+    font-size: 0.714rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    text-box: trim-both cap alphabetic;
+  }
+
+  .ui-badge-accent {
+    background-color: var(--accent-subtle);
+    color: var(--accent);
+    border-color: oklch(from var(--accent) l c h / 0.35);
+  }
+
+  .ui-badge-neutral {
+    background-color: var(--bg-surface-hover);
+    color: var(--text-secondary);
+    border-color: var(--border-subtle);
+  }
+
+  .ui-badge-success {
+    background-color: var(--success-subtle);
+    color: var(--success);
+    border-color: oklch(from var(--success) l c h / 0.35);
+  }
+
+  .ui-badge-warning {
+    background-color: var(--warning-subtle);
+    color: var(--warning);
+    border-color: oklch(from var(--warning) l c h / 0.35);
+  }
+
+  .ui-badge-danger {
+    background-color: var(--danger-subtle);
+    color: var(--danger);
+    border-color: oklch(from var(--danger) l c h / 0.35);
+  }
+
+  .ui-badge-icon {
+    display: flex;
+    align-items: center;
+  }
+
+  kbd {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--bg-surface-hover);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    padding: 2px 8px;
+    font-size: 0.786rem;
+    font-family: var(--font-mono);
+    color: var(--text-primary);
+    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.2);
+    text-box: trim-both cap alphabetic;
+  }
+
+  /* --------------------------------------------------------------------------
+     Forms & Inputs (Compound Architecture)
+     -------------------------------------------------------------------------- */
+  .ui-form {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .ui-form-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 12px 0;
+  }
+
+  .ui-form-row:not(:last-child) {
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  /* Rows carry their own 12px rhythm, so the container's spacing must not
+     stack on top of it: trim the outer edges against the card's gap, and
+     cancel the card body's gap between consecutive rows so every divider has
+     exactly 12px on each side. */
+  .ui-form-row:first-child {
+    padding-top: 0;
+  }
+
+  .ui-form-row:last-child {
+    padding-bottom: 0;
+  }
+
+  .ui-card-body > .ui-form-row + .ui-form-row,
+  .ui-card-body > .ui-form-row + .ui-checkbox-list {
+    margin-top: -12px;
+  }
+
+  .ui-form-row.align-start {
+    align-items: flex-start;
+  }
+
+  .ui-form-row.align-stretch {
+    align-items: stretch;
+  }
+
+  .ui-form-row-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .ui-form-row-label {
+    font-size: 0.929rem;
+    font-weight: 500;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .ui-form-row-required {
+    color: var(--danger);
+    font-size: 0.857rem;
+  }
+
+  .ui-form-row-hint {
+    font-size: 0.786rem;
+    color: var(--text-muted);
+    font-weight: 400;
+  }
+
+  .ui-form-row-desc {
+    font-size: 0.857rem;
+    color: var(--text-muted);
+    line-height: 1.4;
+    margin: 0;
+    text-wrap: pretty;
+  }
+
+  .ui-form-row-control {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  /* Segmented Button Selection */
+  .ui-segmented {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px;
+    background-color: var(--bg-app);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    gap: 2px;
+  }
+
+  .ui-segmented.full-width {
+    width: 100%;
+    display: flex;
+  }
+
+  .ui-segmented-item {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 6px 12px;
+    min-width: var(--segmented-item-min-width, 88px);
+    flex: 1 1 0px;
+    text-align: center;
+    border-radius: calc(var(--radius-md) - 2px);
+    font-size: 0.857rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    background: transparent;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    user-select: none;
+    white-space: nowrap;
+    text-box: trim-both cap alphabetic;
+  }
+
+  .ui-segmented-item:hover:not(:disabled) {
+    color: var(--text-primary);
+    background-color: var(--bg-surface-hover);
+  }
+
+  .ui-segmented-item.selected {
+    background-color: var(--bg-surface);
+    color: var(--text-primary);
+    font-weight: 600;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+    border-color: var(--border-subtle);
+  }
+
+  .ui-segmented-sm .ui-segmented-item {
+    padding: 3px 8px;
+    font-size: 0.786rem;
+    min-width: 64px;
+  }
+
+  .ui-segmented-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Toggle Switch */
+  .ui-toggle {
+    position: relative;
+    width: 42px;
+    height: 24px;
+    background-color: var(--bg-surface-active);
+    border: 1px solid var(--border-subtle);
+    border-radius: 9999px;
+    cursor: pointer;
+    transition: background-color var(--transition-base), border-color var(--transition-base);
+    padding: 2px;
+    display: inline-flex;
+    align-items: center;
+    outline: none;
+    flex-shrink: 0;
+  }
+
+  .ui-toggle:hover:not(.disabled) {
+    border-color: var(--border-strong);
+  }
+
+  .ui-toggle.checked {
+    background-color: var(--accent);
+    border-color: var(--accent);
+  }
+
+  .ui-toggle-thumb {
+    width: 18px;
+    height: 18px;
+    background-color: #ffffff;
+    border-radius: 50%;
+    transition: transform var(--transition-base);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    display: block;
+  }
+
+  .ui-toggle.checked .ui-toggle-thumb {
+    transform: translateX(18px);
+  }
+
+  .ui-toggle-sm {
+    width: 34px;
+    height: 20px;
+  }
+
+  .ui-toggle-sm .ui-toggle-thumb {
+    width: 14px;
+    height: 14px;
+  }
+
+  .ui-toggle-sm.checked .ui-toggle-thumb {
+    transform: translateX(14px);
+  }
+
+  .ui-toggle.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .ui-toggle:focus-visible {
+    box-shadow: 0 0 0 2px var(--bg-surface), 0 0 0 4px var(--accent);
+  }
+
+  /* Shared Form Controls Sizing Metrics */
+  .ui-input-wrapper,
+  .ui-select-wrapper,
+  .ui-slider-wrapper {
+    width: var(--form-control-width, 280px);
+    min-width: var(--form-control-width, 280px);
+    max-width: 100%;
+  }
+
+  /* Text & Number Inputs */
+  .ui-input-wrapper {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background-color: var(--bg-app);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    padding: 0 10px;
+    transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+    color: var(--text-primary);
+  }
+
+  .ui-input-wrapper:focus-within {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent);
+  }
+
+  .ui-input-wrapper:has(.ui-input-field:user-invalid) {
+    border-color: var(--danger);
+  }
+
+  .ui-input-field {
+    background: transparent;
+    border: none;
+    outline: none;
+    color: inherit;
+    font-size: 0.929rem;
+    width: 100%;
+    height: 32px;
+  }
+
+  .ui-input-field::placeholder {
+    color: var(--text-muted);
+  }
+
+  .ui-input-icon {
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+  }
+
+  .ui-input-action {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+  }
+
+  .ui-input-sm .ui-input-field {
+    height: 26px;
+    font-size: 0.857rem;
+  }
+
+  .ui-input-wrapper.has-error {
+    border-color: var(--danger);
+  }
+
+  /* Select Dropdown */
+  .ui-select-wrapper {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    background-color: var(--bg-app);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+  }
+
+  .ui-select-wrapper:focus-within {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent);
+  }
+
+  .ui-select-field {
+    appearance: none;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--text-primary);
+    font-size: 0.929rem;
+    height: 32px;
+    padding: 0 28px 0 10px;
+    width: 100%;
+    cursor: pointer;
+  }
+
+  .ui-select-field option {
+    background-color: var(--bg-surface);
+    color: var(--text-primary);
+  }
+
+  .ui-select-chevron {
+    position: absolute;
+    right: 8px;
+    pointer-events: none;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+  }
+
+  .ui-select-sm .ui-select-field {
+    height: 26px;
+    font-size: 0.857rem;
+    padding: 0 24px 0 8px;
+  }
+
+  /* Checkbox (Inline & List Row Layouts) */
+  .ui-checkbox-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .ui-checkbox-list {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .ui-checkbox-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 12px 0;
+    cursor: pointer;
+    user-select: none;
+    width: 100%;
+    border-bottom: 1px solid var(--border-subtle);
+    transition: background-color var(--transition-fast);
+  }
+
+  .ui-checkbox-row:last-child {
+    border-bottom: none;
+  }
+
+  .ui-checkbox-native {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+
+  .ui-checkbox-custom {
+    width: 18px;
+    height: 18px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-strong);
+    background-color: var(--bg-app);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all var(--transition-fast);
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  .ui-checkbox-custom.checked {
+    background-color: var(--accent);
+    border-color: var(--accent);
+    color: #ffffff;
+  }
+
+  .ui-checkbox-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .ui-checkbox-title {
+    font-size: 0.929rem;
+    color: var(--text-primary);
+    font-weight: 500;
+  }
+
+  .ui-checkbox-desc {
+    font-size: 0.857rem;
+    color: var(--text-muted);
+    line-height: 1.4;
+    text-wrap: pretty;
+  }
+
+  /* Range Slider */
+  .ui-slider-wrapper {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .ui-slider-input {
+    flex: 1;
+    height: 6px;
+    border-radius: 3px;
+    background-color: var(--bg-app);
+    border: 1px solid var(--border-subtle);
+    outline: none;
+    cursor: pointer;
+    accent-color: var(--accent);
+    transition: border-color var(--transition-fast);
+  }
+
+  .ui-slider-input:hover:not(:disabled) {
+    border-color: var(--border-strong);
+  }
+
+  .ui-slider-input:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .ui-slider-value {
+    font-size: 0.857rem;
+    font-family: var(--font-mono);
+    color: var(--text-muted);
+    min-width: 44px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+}

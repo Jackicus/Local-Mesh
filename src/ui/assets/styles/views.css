@@ -1,0 +1,391 @@
+/* ==========================================================================
+   Page Views & Screen Layout Styles (Container Query Enabled)
+   ========================================================================== */
+
+@layer views {
+  .view-container {
+    max-width: 960px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    container: view / inline-size;
+  }
+
+  /* --------------------------------------------------------------------------
+     View Header & Sub-Navigation
+     -------------------------------------------------------------------------- */
+  .view-header {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  /* Annotation voice: screen titles are set in the mono face */
+  .view-title {
+    font-family: var(--font-mono);
+    font-size: 1.357rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+  }
+
+  .view-description {
+    font-size: 0.929rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    margin-top: 2px;
+    text-wrap: pretty;
+  }
+
+  .view-subnav {
+    display: flex;
+    width: 100%;
+    margin-top: 4px;
+  }
+
+  .view-subnav .ui-segmented {
+    width: 100%;
+    display: flex;
+  }
+
+  /* Tab bars compact below the inline-control minimum so a full set still
+     fits the container at the 640px minimum window width */
+  .view-subnav .ui-segmented-item {
+    flex: 1 1 0px;
+    justify-content: center;
+    text-align: center;
+    min-width: 0;
+    padding: 6px 8px;
+  }
+
+  /* --------------------------------------------------------------------------
+     Grids & Lists (Container-Aware)
+     -------------------------------------------------------------------------- */
+  .view-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px;
+  }
+
+  @container view (max-width: 580px) {
+    .view-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .view-list {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  /* --------------------------------------------------------------------------
+     Inventory Manifest & State Dumps (Developer View)
+     -------------------------------------------------------------------------- */
+  .inventory-list {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .inventory-row {
+    display: grid;
+    grid-template-columns: 150px 1fr;
+    gap: 12px;
+    padding: 8px 0;
+    align-items: baseline;
+  }
+
+  .inventory-row:not(:last-child) {
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .inventory-row:first-child {
+    padding-top: 0;
+  }
+
+  .inventory-row:last-child {
+    padding-bottom: 0;
+  }
+
+  .inventory-name {
+    font-family: var(--font-mono);
+    font-size: 0.857rem;
+    font-weight: 500;
+    color: var(--text-primary);
+  }
+
+  .inventory-note {
+    font-size: 0.857rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    text-wrap: pretty;
+  }
+
+  @container card (max-width: 420px) {
+    .inventory-row {
+      grid-template-columns: 1fr;
+      gap: 2px;
+    }
+  }
+
+  .state-dump {
+    background-color: var(--bg-app);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    padding: 12px;
+    font-family: var(--font-mono);
+    font-size: 0.857rem;
+    line-height: 1.6;
+    color: var(--text-primary);
+    overflow-x: auto;
+  }
+
+  /* --------------------------------------------------------------------------
+     Notes (SQLite demo)
+     -------------------------------------------------------------------------- */
+  .note-composer {
+    display: flex;
+    gap: 8px;
+    width: 100%;
+  }
+
+  .note-composer .ui-input-wrapper {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .note-list {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .note-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 0;
+  }
+
+  .note-row:not(:last-child) {
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .note-row:last-child {
+    padding-bottom: 0;
+  }
+
+  .note-text {
+    flex: 1;
+    font-size: 0.929rem;
+    color: var(--text-primary);
+    overflow-wrap: anywhere;
+  }
+
+  .note-date {
+    font-family: var(--font-mono);
+    font-size: 0.786rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+
+  /* --------------------------------------------------------------------------
+     Guide Checklist & Instructions
+     -------------------------------------------------------------------------- */
+  .guide-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .guide-list li {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    font-size: 0.929rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    text-wrap: pretty;
+  }
+
+  .guide-check {
+    color: var(--accent);
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  .guide-list code,
+  .setting-description code {
+    background-color: var(--bg-surface-hover);
+    padding: 2px 6px;
+    border-radius: var(--radius-sm);
+    font-size: 0.857rem;
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+  }
+
+  .setting-description {
+    font-size: 0.929rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    text-wrap: pretty;
+  }
+
+  /* --------------------------------------------------------------------------
+     Shortcuts & Key Displays
+     -------------------------------------------------------------------------- */
+  .shortcut-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.929rem;
+    color: var(--text-secondary);
+    padding: 4px 0;
+  }
+
+  .shortcut-group-label {
+    font-family: var(--font-mono);
+    font-size: 0.714rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    color: var(--text-muted);
+    margin-top: 4px;
+  }
+
+  /* --------------------------------------------------------------------------
+     Theme & Swatches
+     -------------------------------------------------------------------------- */
+  .accent-square-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .accent-square-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-md);
+    border: 2px solid transparent;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: transform var(--transition-fast), box-shadow var(--transition-fast), border-color var(--transition-fast);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+    position: relative;
+  }
+
+  .accent-square-btn:hover {
+    transform: scale(1.1);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  }
+
+  .accent-square-btn.selected {
+    border-color: #ffffff;
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  /* --------------------------------------------------------------------------
+     Embedded Readme Viewer (Help View)
+     -------------------------------------------------------------------------- */
+  .readme-view-container {
+    max-height: 360px;
+    overflow-y: auto;
+    background-color: var(--bg-app);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    padding: 16px;
+  }
+
+  .readme-content {
+    font-family: var(--font-mono);
+    font-size: 0.857rem;
+    line-height: 1.6;
+    color: var(--text-secondary);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  /* --------------------------------------------------------------------------
+     CLAUDE.md Cards (Developer View, dev only)
+     -------------------------------------------------------------------------- */
+  .claude-md {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    font-size: 0.929rem;
+    line-height: 1.6;
+    color: var(--text-secondary);
+  }
+
+  .claude-md h1,
+  .claude-md h2,
+  .claude-md h3 {
+    color: var(--text-primary);
+    font-size: 1rem;
+    font-weight: 600;
+  }
+
+  .claude-md h1 {
+    font-size: 1.071rem;
+  }
+
+  .claude-md ul {
+    margin: 0;
+    padding-left: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .claude-md code {
+    font-family: var(--font-mono);
+    font-size: 0.857rem;
+    background-color: var(--bg-app);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    padding: 1px 5px;
+  }
+
+  .claude-md pre {
+    background-color: var(--bg-app);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    padding: 12px;
+    overflow-x: auto;
+  }
+
+  .claude-md pre code {
+    background: none;
+    border: none;
+    padding: 0;
+  }
+
+  .claude-md a {
+    color: var(--accent);
+  }
+
+  .claude-md-editor {
+    width: 100%;
+    min-height: 240px;
+    resize: vertical;
+    font-family: var(--font-mono);
+    font-size: 0.857rem;
+    line-height: 1.6;
+    color: var(--text-primary);
+    background-color: var(--bg-app);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    padding: 12px;
+  }
+
+  .claude-md-editor:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+}
