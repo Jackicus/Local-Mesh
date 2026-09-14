@@ -1,20 +1,44 @@
-# Electron + React Template
+# Local Mesh
 
-A desktop app starter built on **Electron**, **React**, **Vite**, and **TypeScript**, with plain CSS (cascade layers, OKLCH colors) and no runtime dependencies beyond React and an icon set.
+Local image → 3D mesh generation on your own GPU. An Electron desktop app that
+manages a Python environment, downloads open models from Hugging Face, and runs
+them through a node-based pipeline with a three.js viewer.
 
-## What's included
+Built for small cards: the reference machine is a GTX 1080 with 8 GB of VRAM.
 
-- **Frameless window chrome** — custom draggable top bar with minimize / maximize / close buttons, wired through a context-isolated IPC bridge.
-- **Window state persistence** — size, position, and maximized state are saved to `userData` and restored on launch (with a sanity check that the window is still on a visible display).
-- **Resizable navigation dock** — collapsible sidebar with drag-to-resize (180–360px). Toggle with `Ctrl/Cmd + B`.
-- **Overlay system** — `Modal` dialogs, imperative toasts (`toast.success(...)`), a right-click `ContextMenu`, and `Tooltip`s, all rendered through a single `OverlayHost`.
-- **UI primitives** — `Button`, `Badge`, compound `Card` and `Form` families. Styled with plain CSS, no component library.
-- **Theming** — system/light/dark mode, five accent colors, three font choices, and three font scales, persisted to `localStorage`. Accent hover/subtle shades are derived in CSS with OKLCH relative colors.
-- **Lightweight state** — small stores built on React's `useSyncExternalStore`; no state library.
-- **SQLite storage** — `better-sqlite3` in the main process (`src/main/db.ts`), served over IPC, with a demo Notes view.
-- **Desktop app plumbing** — single-instance lock, crash logging to `userData/logs/`, and an app-info IPC endpoint.
-- **Error boundary** — render errors show a recovery card instead of a white screen.
-- **Developer view** — an in-app playground demoing each primitive, hook, and store.
+## Views
+
+- **Generate** — the three.js viewer with a floating dock: pick a pipeline, drop
+  one or more images, queue jobs, watch progress and VRAM, and inspect results.
+- **Pipelines** — a node editor for generation profiles: Image Input →
+  Background Removal → Mesh Generator (model + model-specific settings) →
+  Post-Process → Mesh Export. Pipelines are JSON files in `~/.local-mesh/pipelines`.
+- **Models** — sets up the Python environment (`uv` venv, torch, worker scripts)
+  and downloads each model's weights and dependencies.
+- **Logs** — general, errors and generation channels, each backed by a file in
+  `~/.local-mesh/logs`.
+- **Settings** — theme, generation defaults (idle unload, device, precision,
+  low-VRAM mode), storage.
+
+## Models
+
+| Model | Params | VRAM | License |
+|---|---|---|---|
+| Hunyuan3D 2 mini (turbo / standard, ~7.7 GB on disk) | 0.6B | ~5 GB | Tencent Hunyuan Community |
+| TripoSR | ~0.5B | ~4 GB | MIT |
+| TripoSG (experimental on 8 GB) | 1.5B | ~7.5 GB | MIT |
+| Mock (procedural, no GPU) | – | – | – |
+
+The registry lives in `src/core/models.ts`; each model has a backend in
+`resources/python/backends/`.
+
+## Requirements
+
+- Node 20+, npm
+- [`uv`](https://docs.astral.sh/uv/) on PATH (`curl -LsSf https://astral.sh/uv/install.sh | sh`)
+- `git` (some backends are installed from their GitHub repos)
+- An NVIDIA GPU with a recent driver. Pascal cards (GTX 10xx) are supported via
+  the CUDA 12.6 torch wheels; newer wheels dropped them.
 
 ## Getting started
 
@@ -28,28 +52,44 @@ npm run build    # typecheck + production bundle (dist/ + dist-electron/)
 npm start        # run Electron against the production build
 ```
 
+Then, in the app: Models → **Set up environment** (once), then per model
+**Download weights** (straight from Hugging Face, no Python needed) and
+**Install dependencies** (into the environment). Drop an image into Generate.
+The worker and backends ship inside the app (`resources/python`); nothing is
+copied out of it. The **Mock** model needs no download and no GPU: use it
+to check the whole queue → worker → viewer path first.
+
+## How it runs
+
+Everything user-specific lives in `~/.local-mesh`:
+
+```text
+env/          uv-managed Python 3.11 venv (torch 2.9.1+cu126)
+repos/        git checkouts some backends need
+models/<id>/  Hugging Face snapshots
+inputs/       per-job copies of source images
+outputs/      generated meshes (glb / obj / stl / ply)
+pipelines/    saved node graphs
+logs/         general.log, errors.log, generation.log
+settings.json
+```
+
+The main process spawns one long-lived `worker.py` from the venv and talks to
+it over JSON lines (`resources/python/PROTOCOL.md`). The worker keeps a single
+model resident between jobs, reports VRAM after every step, frees per-job
+tensors, and is unloaded after an idle timeout. Jobs run one at a time from a
+queue owned by the main process; cancelling a running job asks the worker to
+stop and kills it if it does not.
+
 ## Project layout
 
 ```text
 src/
-├── main/        # Electron main process (window creation, state persistence, IPC handlers)
-├── preload/     # Context-isolated bridge exposing window.electronAPI
-├── core/        # IPC channel names + types shared by main and preload
-└── ui/          # React renderer — see src/ui/README.md for a full guide
-    ├── assets/      # Styles (@layer), icons, fonts
-    ├── components/  # UI primitives
-    ├── hooks/       # useWindowControls, useKeyboardShortcuts
-    ├── shell/       # TopBar, LeftDock, WindowControls, OverlayHost
-    ├── stores/      # dockStore, themeStore
-    └── views/       # Home, Developer, Settings, Help screens
+├── core/        # contracts: IPC, model registry, pipeline graph, worker protocol
+├── main/        # Electron main: env setup, downloads, worker + queue, logging
+├── preload/     # window.electronAPI bridge
+└── ui/          # React renderer — see src/ui/README.md
+resources/
+├── python/      # worker, backends, downloader, requirements, manifest
+└── icon.png
 ```
-
-To add a screen, see the walkthrough in [`src/ui/README.md`](src/ui/README.md).
-
-## Notes
-
-- **Agent skills** live in [`.claude/skills/`](.claude/skills/) — that's the canonical copy, picked up by Claude Code. `npm run sync-skills` mirrors them into `.agents/skills/` for tools that read that path instead. Edit under `.claude/`, then re-run the sync; don't edit `.agents/` directly.
-- **Packaging isn't set up.** When you're ready to ship installers, add [electron-builder](https://www.electron.build/) or [Electron Forge](https://www.electronforge.io/).
-- **Fonts are self-hosted** via `@fontsource` packages (`src/ui/assets/fonts/fonts.css`) — no network needed at runtime.
-- **Electron is paired with better-sqlite3's prebuilt binaries** so a fresh install needs no C++ toolchain: the `postinstall` script fetches the matching Electron-ABI binding. When bumping Electron majors, check that a `better-sqlite3` release ships prebuilds for that ABI (or install VS Build Tools and use `electron-rebuild`).
-- **No linter or tests are included** — bring your own ESLint/Vitest setup if you want them.

@@ -258,6 +258,26 @@
     padding-right: 12px;
   }
 
+  /* Unseen-error count on the Logs row */
+  .dock-item-badge {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    margin-right: 10px;
+    padding: 0 5px;
+    border-radius: 9px;
+    background-color: var(--danger);
+    color: #ffffff;
+    font-family: var(--font-mono);
+    font-size: 0.714rem;
+    font-weight: 600;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+
   .left-dock-footer {
     padding: 8px 6px;
     border-top: 1px solid var(--border-subtle);
@@ -297,5 +317,109 @@
     overflow-y: auto;
     padding: calc(var(--topbar-height) + 20px) 24px 24px;
     background-color: var(--bg-app);
+  }
+
+  /* --------------------------------------------------------------------------
+     Bottom Log Dock (an overlay over the content area, not a layout column —
+     full-bleed views keep their 100vh when it opens)
+     -------------------------------------------------------------------------- */
+  .bottom-dock {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    z-index: var(--z-bottom-dock);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    /* Never slides under the titlebar, however short the window is */
+    max-height: calc(100vh - var(--topbar-height));
+    background-color: color-mix(in oklab, var(--bg-surface) 94%, transparent);
+    backdrop-filter: blur(12px);
+    border-top: 1px solid var(--border-subtle);
+    box-shadow: 0 -8px 28px oklch(0% 0 0 / 0.18);
+    transition: height var(--transition-base), left var(--transition-base);
+    will-change: height;
+  }
+
+  .bottom-dock.is-resizing {
+    transition: none !important;
+  }
+
+  /* The collapsed bar is wrapped by its Tooltip; let the wrapper carry the strip */
+  .bottom-dock > .ui-tooltip-wrapper {
+    flex: 1;
+    min-height: 0;
+  }
+
+  /* Collapsed: one strip of counts, the whole thing a button */
+  .bottom-dock-bar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    width: 100%;
+    height: 100%;
+    padding: 0 12px;
+    background: none;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 0.688rem;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: color var(--transition-fast), background-color var(--transition-fast);
+  }
+
+  .bottom-dock-bar:hover {
+    background-color: var(--bg-surface-hover);
+    color: var(--text-secondary);
+  }
+
+  .bottom-dock-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 600;
+    color: var(--text-secondary);
+  }
+
+  .bottom-dock-stat {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .bottom-dock-stat b {
+    font-weight: 600;
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .bottom-dock-stat.is-danger,
+  .bottom-dock-stat.is-danger b {
+    color: var(--danger);
+  }
+
+  .bottom-dock-chevron {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  /* Same grab technique as the left dock's resizer, on the top edge */
+  .bottom-dock-resizer {
+    position: absolute;
+    top: 0;
+    right: 0;
+    left: 0;
+    height: 4px;
+    cursor: row-resize;
+    z-index: 20;
+    background-color: transparent;
+    transition: background-color var(--transition-fast);
+  }
+
+  .bottom-dock-resizer:hover,
+  .bottom-dock-resizer.resizing {
+    background-color: var(--accent);
   }
 }

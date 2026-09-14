@@ -11,11 +11,13 @@ export const ViewsTab: React.FC = () => {
         path="src/ui/views"
         subtitle="Every registered screen — the router is a plain switch in index.tsx"
         items={[
-          { name: 'Home', note: 'landing screen with jump-off cards' },
-          { name: 'Notes', note: 'better-sqlite3 demo — persistent rows over IPC' },
+          { name: 'Generate', note: 'full-bleed: drop images, pick a pipeline, watch the queue and preview meshes' },
+          { name: 'Pipelines', note: 'node-graph editor for image → mesh pipelines saved under ~/.local-mesh/pipelines' },
+          { name: 'Models', note: 'Python environment status/setup and the model registry with download, load, delete' },
+          { name: 'Logs', note: 'not a view — LogsPanel lives in the shell bottom dock (Ctrl/Cmd + J)' },
           { name: 'Developer', note: 'this view — six tabs, one per src/ui directory' },
-          { name: 'Settings', note: 'Appearance (theme, accent, fonts) and Storage tabs' },
-          { name: 'Help', note: 'keyboard shortcuts and the repo README, in-app' },
+          { name: 'Settings', note: 'Appearance, Generation (device, precision, idle unload) and Storage tabs' },
+          { name: 'Help', note: 'getting-started guide, keyboard shortcuts and the repo README, in-app' },
         ]}
       />
 

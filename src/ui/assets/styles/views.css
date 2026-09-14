@@ -143,54 +143,6 @@
   }
 
   /* --------------------------------------------------------------------------
-     Notes (SQLite demo)
-     -------------------------------------------------------------------------- */
-  .note-composer {
-    display: flex;
-    gap: 8px;
-    width: 100%;
-  }
-
-  .note-composer .ui-input-wrapper {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .note-list {
-    display: flex;
-    flex-direction: column;
-  }
-
-  .note-row {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 8px 0;
-  }
-
-  .note-row:not(:last-child) {
-    border-bottom: 1px solid var(--border-subtle);
-  }
-
-  .note-row:last-child {
-    padding-bottom: 0;
-  }
-
-  .note-text {
-    flex: 1;
-    font-size: 0.929rem;
-    color: var(--text-primary);
-    overflow-wrap: anywhere;
-  }
-
-  .note-date {
-    font-family: var(--font-mono);
-    font-size: 0.786rem;
-    color: var(--text-muted);
-    white-space: nowrap;
-  }
-
-  /* --------------------------------------------------------------------------
      Guide Checklist & Instructions
      -------------------------------------------------------------------------- */
   .guide-list {
@@ -224,6 +176,12 @@
     font-size: 0.857rem;
     color: var(--text-primary);
     font-family: var(--font-mono);
+  }
+
+  /* Absolute paths in a settings row description: mono, breakable anywhere */
+  .settings-path {
+    font-family: var(--font-mono);
+    overflow-wrap: anywhere;
   }
 
   .setting-description {

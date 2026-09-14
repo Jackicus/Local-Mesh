@@ -1,0 +1,45 @@
+{
+  "version": "0.1.0",
+  "python": "3.11",
+  "torch": {
+    "packages": ["torch==2.9.1", "torchvision"],
+    "indexUrl": "https://download.pytorch.org/whl/cu126"
+  },
+  "baseRequirements": "requirements/base.txt",
+  "models": {
+    "hunyuan3d-2mini": {
+      "requirements": "requirements/hunyuan3d.txt",
+      "repos": [
+        {
+          "url": "https://github.com/Tencent-Hunyuan/Hunyuan3D-2.git",
+          "dir": "Hunyuan3D-2",
+          "pipInstall": false
+        }
+      ]
+    },
+    "triposr": {
+      "requirements": "requirements/triposr.txt",
+      "repos": [
+        {
+          "url": "https://github.com/VAST-AI-Research/TripoSR.git",
+          "dir": "TripoSR",
+          "pipInstall": false
+        }
+      ]
+    },
+    "triposg": {
+      "requirements": "requirements/triposg.txt",
+      "repos": [
+        {
+          "url": "https://github.com/VAST-AI-Research/TripoSG.git",
+          "dir": "TripoSG",
+          "pipInstall": false
+        }
+      ]
+    },
+    "mock": {
+      "requirements": null,
+      "repos": []
+    }
+  }
+}

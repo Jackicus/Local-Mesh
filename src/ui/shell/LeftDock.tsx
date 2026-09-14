@@ -1,13 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import {
-  HomeIcon,
-  FileTextIcon,
+  BoxIcon,
+  WorkflowIcon,
+  PackageIcon,
+  ScrollTextIcon,
   CodeIcon,
   SettingsIcon,
   HelpIcon,
   IconComponent,
 } from '../assets/icons';
 import { useDockStore, DOCK_MIN_WIDTH, DOCK_MAX_WIDTH } from '../stores/dockStore';
+import { useLogStore } from '../stores/logStore';
 
 interface NavItem {
   id: string;
@@ -16,11 +19,14 @@ interface NavItem {
 }
 
 const MAIN_NAV_ITEMS: NavItem[] = [
-  { id: 'home', label: 'Home', icon: HomeIcon },
-  { id: 'notes', label: 'Notes', icon: FileTextIcon },
+  { id: 'generate', label: 'Generate', icon: BoxIcon },
+  { id: 'pipelines', label: 'Pipelines', icon: WorkflowIcon },
+  { id: 'models', label: 'Models', icon: PackageIcon },
 ];
 
 const FOOTER_NAV_ITEMS: NavItem[] = [
+  // Not a view: toggles the bottom dock.
+  { id: 'logs', label: 'Logs', icon: ScrollTextIcon },
   { id: 'developer', label: 'Developer', icon: CodeIcon },
   { id: 'help', label: 'Help & Support', icon: HelpIcon },
   { id: 'settings', label: 'Settings', icon: SettingsIcon },
@@ -28,6 +34,7 @@ const FOOTER_NAV_ITEMS: NavItem[] = [
 
 export const LeftDock: React.FC = () => {
   const [dockState, store] = useDockStore();
+  const [logs] = useLogStore();
   const [isResizing, setIsResizing] = useState(false);
 
   useEffect(() => {
@@ -66,19 +73,26 @@ export const LeftDock: React.FC = () => {
 
   const renderNavItem = (item: NavItem) => {
     const Icon = item.icon;
-    const isActive = dockState.activeItem === item.id;
+    const isLogs = item.id === 'logs';
+    const isActive = isLogs ? dockState.bottom.isOpen : dockState.activeItem === item.id;
 
     return (
       <button
         key={item.id}
         type="button"
         className={`dock-item ${isActive ? 'active' : ''}`}
-        onClick={() => store.setActiveItem(item.id)}
+        aria-expanded={isLogs ? dockState.bottom.isOpen : undefined}
+        onClick={() => (isLogs ? store.toggleBottom() : store.setActiveItem(item.id))}
       >
         <span className="dock-item-icon">
           <Icon size={20} />
         </span>
         <span className="dock-item-label">{item.label}</span>
+        {isLogs && logs.unseenErrors > 0 && (
+          <span className="dock-item-badge" title={`${logs.unseenErrors} unseen errors`}>
+            {logs.unseenErrors > 99 ? '99+' : logs.unseenErrors}
+          </span>
+        )}
       </button>
     );
   };

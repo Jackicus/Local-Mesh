@@ -1,0 +1,526 @@
+/* ==========================================================================
+   models view
+
+   Two datasheets: the environment card is a spec grid, each model card is a
+   header line, a two-line abstract, one mono spec line and a two-row install
+   ledger. Everything that only explains lives in a title tooltip.
+   ========================================================================== */
+
+@layer views {
+  .models-inline-code {
+    font-family: var(--font-mono);
+    font-size: 0.857rem;
+    color: var(--text-primary);
+    background-color: var(--bg-surface-hover);
+    padding: 1px 5px;
+    border-radius: var(--radius-sm);
+  }
+
+  .models-muted {
+    color: var(--text-muted);
+  }
+
+  .models-warning {
+    color: var(--warning);
+  }
+
+  .models-danger {
+    color: var(--danger);
+  }
+
+  @keyframes models-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  .models-spin {
+    animation: models-spin 1s linear infinite;
+  }
+
+  /* A model card needs room for its ledger rows: wider columns than the
+     default view grid, still collapsing to one column on a narrow window. */
+  .models-grid {
+    grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  }
+
+  /* Stamps that annotate rather than announce: badge voice, half the weight */
+  .models-pill {
+    padding: 2px 6px;
+    font-size: 0.679rem;
+    letter-spacing: 0.06em;
+  }
+
+  /* --------------------------------------------------------------------------
+     Environment card: a two-column spec grid
+     -------------------------------------------------------------------------- */
+  .models-env-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 20px;
+  }
+
+  .models-env-field {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    min-width: 0;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .models-env-field:nth-child(-n + 2) {
+    padding-top: 0;
+  }
+
+  .models-env-field:last-child {
+    padding-bottom: 0;
+    border-bottom: none;
+  }
+
+  .models-env-field.wide {
+    grid-column: 1 / -1;
+  }
+
+  .models-env-label {
+    flex: 0 0 auto;
+    min-width: 46px;
+    font-family: var(--font-mono);
+    font-size: 0.714rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    color: var(--text-muted);
+  }
+
+  /* Values are single-line: long paths and uv build strings ellipsize and
+     carry the full text in a title tooltip. */
+  .models-env-value {
+    flex: 1;
+    min-width: 0;
+    font-family: var(--font-mono);
+    font-size: 0.857rem;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  @container card (max-width: 420px) {
+    .models-env-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .models-env-field:nth-child(2) {
+      padding-top: 6px;
+    }
+  }
+
+  .models-env-note,
+  .models-env-error {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.857rem;
+    line-height: 1.45;
+    text-wrap: pretty;
+    overflow-wrap: anywhere;
+  }
+
+  .models-env-note {
+    color: var(--text-muted);
+  }
+
+  .models-env-error {
+    color: var(--danger);
+  }
+
+  .models-env-note svg,
+  .models-env-error svg {
+    flex-shrink: 0;
+  }
+
+  .models-hint {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 0.857rem;
+    color: var(--text-secondary);
+  }
+
+  .models-code-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .models-code {
+    flex: 1;
+    min-width: 0;
+    font-family: var(--font-mono);
+    font-size: 0.857rem;
+    color: var(--text-primary);
+    background-color: var(--bg-app);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    padding: 6px 10px;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+
+  /* --------------------------------------------------------------------------
+     Setup progress + log
+     -------------------------------------------------------------------------- */
+  .models-setup {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  /* Phase, bar and percentage share one line */
+  .models-setup-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: var(--font-mono);
+    font-size: 0.786rem;
+  }
+
+  .models-setup-phase {
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+  }
+
+  .models-setup-pct {
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .models-setup-message {
+    font-size: 0.786rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .models-progress {
+    flex: 1;
+    height: 6px;
+    background-color: var(--bg-app);
+    border: 1px solid var(--border-subtle);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  .models-progress-fill {
+    height: 100%;
+    background-color: var(--accent);
+    border-radius: 3px;
+    transition: width var(--transition-base);
+  }
+
+  .models-progress-accent .models-progress-fill {
+    background-color: var(--accent);
+  }
+
+  .models-progress-danger .models-progress-fill {
+    background-color: var(--danger);
+  }
+
+  @keyframes models-slide {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(250%);
+    }
+  }
+
+  .models-progress.indeterminate .models-progress-fill {
+    animation: models-slide 1.4s ease-in-out infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .models-progress.indeterminate .models-progress-fill {
+      animation: none;
+      width: 100%;
+      opacity: 0.4;
+    }
+    .models-spin {
+      animation: none;
+    }
+  }
+
+  .models-setup-log {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .models-setup-log-toggle {
+    display: inline-flex;
+    align-items: center;
+    align-self: flex-start;
+    gap: 6px;
+    padding: 2px 0;
+    font-family: var(--font-mono);
+    font-size: 0.786rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+    background: none;
+    border: none;
+  }
+
+  .models-setup-log-toggle:hover {
+    color: var(--text-primary);
+  }
+
+  .models-setup-log-chevron {
+    transition: transform var(--transition-base);
+  }
+
+  .models-setup-log-toggle.open .models-setup-log-chevron {
+    transform: rotate(180deg);
+  }
+
+  .models-setup-log-count {
+    color: var(--text-muted);
+  }
+
+  .models-setup-log-panel {
+    max-height: 200px;
+    overflow: auto;
+    background-color: var(--bg-app);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    padding: 12px;
+    font-family: var(--font-mono);
+    font-size: 0.786rem;
+    line-height: 1.6;
+    color: var(--text-secondary);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  /* --------------------------------------------------------------------------
+     Model cards
+     -------------------------------------------------------------------------- */
+  .models-card .ui-card-body {
+    gap: 10px;
+  }
+
+  /* Name and vendor share one line; the name gives way before the stamps do */
+  .models-card-name {
+    min-width: 0;
+    font-size: 1.071rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .models-card-vendor {
+    font-size: 0.929rem;
+    font-weight: 400;
+    color: var(--text-muted);
+  }
+
+  .models-card-marks {
+    display: flex;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 6px;
+  }
+
+  /* Too narrow for name and stamps side by side: the stamps take their own row */
+  @container card (max-width: 380px) {
+    .models-card .ui-card-header {
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .models-card-name {
+      flex: 1 0 100%;
+      white-space: normal;
+    }
+
+    .models-card-marks {
+      justify-content: flex-start;
+    }
+  }
+
+  .models-description {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    font-size: 0.929rem;
+    line-height: 1.45;
+    color: var(--text-secondary);
+  }
+
+  /* One datasheet line: params, VRAM, disk, licence, release — then the fit.
+     A long licence name wraps inside the text column; the pill stays put. */
+  .models-spec {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .models-spec-line {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-family: var(--font-mono);
+    font-size: 0.786rem;
+    line-height: 1.5;
+    color: var(--text-muted);
+  }
+
+  .models-fit {
+    display: inline-flex;
+    flex-shrink: 0;
+    margin-left: auto;
+  }
+
+  /* --------------------------------------------------------------------------
+     Install ledger: one line per step, progress unfurls underneath
+     -------------------------------------------------------------------------- */
+  .models-steps {
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background-color: var(--bg-app);
+    overflow: hidden;
+  }
+
+  .models-step {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 6px 10px;
+    min-height: 38px;
+  }
+
+  .models-step + .models-step {
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  .models-step-name {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 8px;
+    font-family: var(--font-mono);
+    font-size: 0.714rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    color: var(--text-primary);
+  }
+
+  .models-step-index {
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .models-step-size {
+    font-family: var(--font-mono);
+    font-size: 0.786rem;
+    color: var(--text-muted);
+  }
+
+  .models-step-action {
+    display: flex;
+    margin-left: auto;
+  }
+
+  .models-step-action:empty {
+    display: none;
+  }
+
+  /* Ledger buttons say one word, so they drop the shared minimum width */
+  .models-step .btn-sm {
+    min-width: auto;
+  }
+
+  .models-step-progress {
+    flex-basis: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+    padding-bottom: 2px;
+  }
+
+  .models-download-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .models-download-pct {
+    font-family: var(--font-mono);
+    font-size: 0.786rem;
+    color: var(--text-muted);
+    min-width: 36px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .models-download-text {
+    font-family: var(--font-mono);
+    font-size: 0.786rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .models-card .ui-card-footer {
+    gap: 6px;
+    padding-top: 12px;
+    flex-wrap: wrap;
+  }
+
+  /* A disabled button swallows the hover events its Tooltip wrapper listens
+     for, so the "set up the environment first" hint would never open. */
+  .models-card .ui-tooltip-wrapper .btn:disabled {
+    pointer-events: none;
+  }
+
+  /* --------------------------------------------------------------------------
+     Storage footer line
+     -------------------------------------------------------------------------- */
+  .models-storage {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 10px 0 0;
+    border-top: 1px solid var(--border-subtle);
+    color: var(--text-muted);
+    font-size: 0.857rem;
+  }
+
+  .models-storage-label {
+    font-family: var(--font-mono);
+    font-size: 0.714rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+  }
+
+  .models-storage-value {
+    color: var(--text-secondary);
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+}

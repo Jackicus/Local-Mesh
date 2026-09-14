@@ -1,0 +1,11 @@
+<!-- Placeholder app icon: the favicon.svg mark on a solid tile so it reads at
+     taskbar/alt-tab sizes on Linux. Regenerate the PNG after editing:
+     rsvg-convert -w 512 -h 512 resources/icon.svg -o resources/icon.png -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="112" fill="#0f172a" />
+  <g transform="translate(96 96) scale(13.333)" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <rect width="18" height="18" x="3" y="3" rx="2" />
+    <path d="M9 3v18" />
+    <path d="m14 9 3 3-3 3" />
+  </g>
+</svg>

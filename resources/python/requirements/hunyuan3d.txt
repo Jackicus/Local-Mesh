@@ -1,0 +1,18 @@
+# Shape-only dependencies for hy3dgen (Hunyuan3D-2 repo, imported from
+# ~/.local-mesh/repos/Hunyuan3D-2 via sys.path). Derived from the upstream
+# requirements.txt / setup.py minus everything only the texture pipeline or
+# the Gradio demo needs (custom_rasterizer, differentiable_renderer, xatlas,
+# gradio, fastapi, uvicorn, onnxruntime) and minus torch/torchvision, which
+# main installs separately. opencv-python-headless replaces opencv-python.
+diffusers>=0.30
+transformers>=4.48
+accelerate>=0.26
+safetensors>=0.4
+einops>=0.7
+omegaconf>=2.3
+opencv-python-headless>=4.9
+# hy3dgen.shapegen imports postprocessors (pymeshlab) at package import time
+pymeshlab>=2023.12
+scikit-image>=0.22
+pyyaml>=6
+tqdm>=4.66

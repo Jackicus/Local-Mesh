@@ -71,7 +71,10 @@ src/ui/
 │   └── themeStore.ts   # Theme mode (System/Light/Dark) & Accent color selector
 │
 ├── views/              # Modular screen directories
-│   ├── Home/           # Home canvas (HomeView.tsx, index.ts)
+│   ├── Generate/       # three.js viewer + generation dock (landing view)
+│   ├── Pipelines/      # node editor for generation pipelines
+│   ├── Models/         # environment + model downloads
+│   ├── Logs/           # general / errors / generation log viewer
 │   ├── Developer/      # Developer workspace with 6 tabs (Components, Assets, Hooks, Stores, Shell, Views)
 │   ├── Settings/       # Settings with Appearance (theme, fonts) and Storage tabs
 │   ├── Help/           # User-facing documentation & shortcuts (HelpView.tsx, index.ts)

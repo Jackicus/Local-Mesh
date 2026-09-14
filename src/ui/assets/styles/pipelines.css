@@ -1,0 +1,898 @@
+/* ==========================================================================
+   pipelines view — a node editor laid out like the Generate view: the canvas
+   is the whole screen on --bg-app and the chrome floats over it on frosted
+   plates (toolbar top-left, validation bottom-left, pipelines in a right
+   dock). Wires carry the port type's colour; the accent is reserved for
+   selection, so "what is this?" and "what did I pick?" never speak with the
+   same voice.
+   ========================================================================== */
+
+@layer views {
+  /* Break out of .shell-content's calc(var(--topbar-height) + 20px) 24px 24px
+     padding: the canvas is the screen, and the chrome floats over it on
+     frosted plates that share one recipe — the same instrument voice the
+     Generate view uses. */
+  .pipe-view {
+    position: relative;
+    margin: calc(-1 * (var(--topbar-height) + 20px)) -24px -24px;
+    height: 100vh;
+    min-width: 0;
+    overflow: hidden;
+    background-color: var(--bg-app);
+
+    --pipe-inset: 12px;
+    --pipe-dock-width: 340px;
+    --pipe-plate-bg: color-mix(in oklab, var(--bg-surface) 92%, transparent);
+    --pipe-image: oklch(0.78 0.11 220);
+    --pipe-mesh: oklch(0.78 0.12 55);
+    --pipe-grid-dot: oklch(from var(--text-muted) l c h / 0.5);
+    --pipe-node-shadow: 0 2px 10px rgb(0 0 0 / 0.22);
+    --pipe-node-shadow-lifted: 0 8px 22px rgb(0 0 0 / 0.3);
+  }
+
+  [data-theme='light'] .pipe-view {
+    --pipe-image: oklch(0.58 0.13 230);
+    --pipe-mesh: oklch(0.62 0.15 48);
+    --pipe-grid-dot: oklch(from var(--text-muted) l c h / 0.45);
+    --pipe-node-shadow: 0 1px 3px rgb(0 0 0 / 0.1);
+    --pipe-node-shadow-lifted: 0 6px 18px rgb(0 0 0 / 0.14);
+  }
+
+  /* --------------------------------------------------------------------------
+     Shared plate + label voice
+     -------------------------------------------------------------------------- */
+  .pipe-dock,
+  .pipe-toolbar,
+  .pipe-validation,
+  .pipe-dock-open {
+    background-color: var(--pipe-plate-bg);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--border-subtle);
+    box-shadow: 0 8px 28px oklch(0% 0 0 / 0.22);
+  }
+
+  .pipe-dock-title,
+  .pipe-section-title,
+  .pipe-field-label {
+    font-family: var(--font-mono);
+    font-size: 0.688rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    color: var(--text-muted);
+  }
+
+  /* The icon button the dock header and the collapsed handle share. */
+  .pipe-tool {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    transition: background-color var(--transition-fast), color var(--transition-fast),
+      transform var(--transition-fast);
+  }
+
+  .pipe-tool:hover {
+    background-color: var(--bg-surface-hover);
+    color: var(--text-primary);
+  }
+
+  .pipe-tool:active {
+    transform: scale(0.92);
+  }
+
+  /* --------------------------------------------------------------------------
+     Canvas overlays: the editor's controls top-left, validation bottom-left
+     -------------------------------------------------------------------------- */
+  .pipe-toolbar {
+    position: absolute;
+    top: calc(var(--topbar-height) + var(--pipe-inset));
+    left: var(--pipe-inset);
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-radius: var(--radius-md);
+  }
+
+  .pipe-toolbar .btn {
+    min-width: auto;
+  }
+
+  .pipe-toolbar-sep {
+    width: 1px;
+    height: 18px;
+    background-color: var(--border-subtle);
+  }
+
+  .pipe-save-state {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-family: var(--font-mono);
+    font-size: 0.714rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+
+  .pipe-save-state.saved {
+    color: var(--success);
+  }
+
+  .pipe-spin {
+    animation: pipe-spin 0.9s linear infinite;
+  }
+
+  @keyframes pipe-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  .pipe-blank {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 32px;
+    text-align: center;
+    color: var(--text-muted);
+  }
+
+  .pipe-view.is-docked .pipe-blank {
+    right: calc(var(--pipe-dock-width) + var(--pipe-inset) * 2);
+  }
+
+  .pipe-blank h2 {
+    font-family: var(--font-mono);
+    font-size: 1.071rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .pipe-blank p {
+    max-width: 42ch;
+    font-size: 0.929rem;
+    line-height: 1.5;
+    color: var(--text-secondary);
+  }
+
+  .pipe-blank .btn {
+    margin-top: 6px;
+  }
+
+  /* --------------------------------------------------------------------------
+     Right dock: what exists, then what is open
+     -------------------------------------------------------------------------- */
+  .pipe-dock {
+    position: absolute;
+    top: calc(var(--topbar-height) + var(--pipe-inset));
+    right: var(--pipe-inset);
+    bottom: calc(var(--pipe-inset) + var(--bottomdock-height, 0px));
+    z-index: 2;
+    width: var(--pipe-dock-width);
+    max-width: calc(100% - var(--pipe-inset) * 2);
+    display: flex;
+    flex-direction: column;
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+  }
+
+  /* The collapsed dock's handle: the Tooltip wrapper carries the position so
+     the bubble still anchors to the button. */
+  .pipe-dock-open-wrap {
+    position: absolute;
+    top: calc(var(--topbar-height) + var(--pipe-inset));
+    right: var(--pipe-inset);
+    z-index: 2;
+  }
+
+  .pipe-dock-open {
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-md);
+  }
+
+  .pipe-dock-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 8px 8px 14px;
+    border-bottom: 1px solid var(--border-subtle);
+    flex-shrink: 0;
+  }
+
+  .pipe-dock-title {
+    color: var(--text-secondary);
+  }
+
+  .pipe-dock-body {
+    flex: 1;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 4px 14px 16px;
+  }
+
+  .pipe-section {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .pipe-section:last-child {
+    border-bottom: none;
+  }
+
+  .pipe-section-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 24px;
+  }
+
+  .pipe-section-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: inherit;
+  }
+
+  .pipe-chevron {
+    color: var(--text-muted);
+    transform: rotate(-90deg);
+    transition: transform var(--transition-fast);
+  }
+
+  .pipe-chevron.is-open {
+    transform: rotate(0deg);
+  }
+
+  .pipe-section-meta {
+    font-family: var(--font-mono);
+    font-size: 0.688rem;
+    color: var(--text-muted);
+    padding: 1px 6px;
+    border: 1px solid var(--border-subtle);
+    border-radius: 999px;
+  }
+
+  .pipe-section-action {
+    margin-left: auto;
+  }
+
+  .pipe-section-action .btn {
+    min-width: auto;
+  }
+
+  .pipe-section-body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  /* The open pipeline's title fields — same debounced save as the canvas. */
+  .pipe-field {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .pipe-field .ui-input-wrapper {
+    width: 100%;
+  }
+
+  /* --------------------------------------------------------------------------
+     Saved pipelines list (inside the dock)
+     -------------------------------------------------------------------------- */
+  .pipe-list-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 0 -8px;
+  }
+
+  .pipe-list-empty {
+    padding: 6px 10px;
+    font-size: 0.857rem;
+    color: var(--text-muted);
+  }
+
+  .pipe-list-row {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    width: 100%;
+    padding: 9px 10px;
+    border-radius: var(--radius-md);
+    text-align: left;
+    color: var(--text-secondary);
+    transition: background-color var(--transition-fast), color var(--transition-fast);
+  }
+
+  .pipe-list-row:hover {
+    background-color: var(--bg-surface-hover);
+  }
+
+  .pipe-list-row.editing {
+    background-color: var(--accent-subtle);
+    box-shadow: inset 2px 0 0 var(--accent);
+  }
+
+  .pipe-list-row-top {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .pipe-list-name {
+    font-size: 0.929rem;
+    font-weight: 500;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* The one pipeline the Generate view will actually run. */
+  .pipe-list-active {
+    flex-shrink: 0;
+    font-family: var(--font-mono);
+    font-size: 0.643rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+  }
+
+  .pipe-list-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .pipe-list-meta .ui-badge {
+    max-width: 60%;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  .pipe-list-meta .ui-badge > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .pipe-list-facts {
+    font-family: var(--font-mono);
+    font-size: 0.714rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .ui-modal-body .pipe-rename-input {
+    width: 100%;
+    min-width: 0;
+  }
+
+  /* --------------------------------------------------------------------------
+     Canvas surface
+     -------------------------------------------------------------------------- */
+  .pipe-canvas {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    background-color: var(--bg-app);
+    background-image: radial-gradient(circle at 1px 1px, var(--pipe-grid-dot) 1px, transparent 0);
+    outline: none;
+    touch-action: none;
+    cursor: default;
+  }
+
+  .pipe-canvas.space {
+    cursor: grab;
+  }
+
+  .pipe-canvas.panning {
+    cursor: grabbing;
+  }
+
+  .pipe-canvas:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
+
+  .pipe-world {
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: 0;
+    height: 0;
+    transform-origin: 0 0;
+  }
+
+  .pipe-empty {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-content: center;
+    font-size: 0.929rem;
+    color: var(--text-muted);
+    pointer-events: none;
+  }
+
+  /* Centre the hint in the visible canvas, not under the dock. */
+  .pipe-view.is-docked .pipe-empty {
+    right: calc(var(--pipe-dock-width) + var(--pipe-inset) * 2);
+  }
+
+  /* --------------------------------------------------------------------------
+     Wires
+     -------------------------------------------------------------------------- */
+  .pipe-edges {
+    position: absolute;
+    left: 0;
+    top: 0;
+    overflow: visible;
+    pointer-events: none;
+  }
+
+  .pipe-edge-hit {
+    fill: none;
+    stroke: transparent;
+    stroke-width: 16;
+    pointer-events: stroke;
+    cursor: pointer;
+  }
+
+  .pipe-edge-line {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    transition: stroke-width var(--transition-fast);
+  }
+
+  .pipe-edge:hover .pipe-edge-line {
+    stroke-width: 3;
+  }
+
+  .pipe-edge.selected .pipe-edge-line {
+    stroke: var(--accent);
+    stroke-width: 3.5;
+  }
+
+  .pipe-edge-pending {
+    fill: none;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-dasharray: 7 5;
+    pointer-events: none;
+  }
+
+  .pipe-edge-x {
+    opacity: 0;
+    pointer-events: none;
+    cursor: pointer;
+    transition: opacity var(--transition-fast);
+  }
+
+  .pipe-edge:hover .pipe-edge-x,
+  .pipe-edge.selected .pipe-edge-x {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .pipe-edge-x circle {
+    fill: var(--bg-surface);
+    stroke: var(--border-strong);
+  }
+
+  .pipe-edge-x path {
+    fill: none;
+    stroke: var(--text-secondary);
+    stroke-width: 1.6;
+    stroke-linecap: round;
+  }
+
+  .pipe-edge-x:hover circle {
+    fill: var(--danger-subtle);
+    stroke: var(--danger);
+  }
+
+  .pipe-edge-x:hover path {
+    stroke: var(--danger);
+  }
+
+  /* --------------------------------------------------------------------------
+     Node cards
+     -------------------------------------------------------------------------- */
+  .pipe-node {
+    position: absolute;
+    background-color: var(--bg-block);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--pipe-node-shadow);
+    outline: none;
+    transition: box-shadow var(--transition-fast), border-color var(--transition-fast);
+  }
+
+  .pipe-node:hover {
+    box-shadow: var(--pipe-node-shadow-lifted);
+  }
+
+  .pipe-node.selected {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent), var(--pipe-node-shadow-lifted);
+  }
+
+  .pipe-node-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 36px;
+    padding: 0 12px;
+    border-bottom: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    cursor: grab;
+    touch-action: none;
+  }
+
+  .pipe-node-header:active {
+    cursor: grabbing;
+  }
+
+  .pipe-node-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .pipe-node-title {
+    font-family: var(--font-mono);
+    font-size: 0.714rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* --------------------------------------------------------------------------
+     Ports — circles straddle the card edge, centres match portPosition()
+     -------------------------------------------------------------------------- */
+  .pipe-ports {
+    position: relative;
+  }
+
+  .pipe-port-item {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    height: 26px;
+  }
+
+  .pipe-port-item.in {
+    left: 0;
+    padding-left: 12px;
+  }
+
+  .pipe-port-item.out {
+    right: 0;
+    padding-right: 12px;
+  }
+
+  .pipe-port {
+    position: absolute;
+    top: 50%;
+    width: 11px;
+    height: 11px;
+    margin-top: -5.5px;
+    border: 2px solid var(--border-strong);
+    border-radius: 50%;
+    background-color: var(--bg-block);
+    transition: transform var(--transition-fast), background-color var(--transition-fast);
+  }
+
+  /* The port's own hue, so hover can fill with it (the inline style only
+     paints the ring). */
+  .pipe-port[data-port-type='image'] {
+    color: var(--pipe-image);
+  }
+
+  .pipe-port[data-port-type='mesh'] {
+    color: var(--pipe-mesh);
+  }
+
+  .pipe-port.in {
+    left: -6.5px;
+  }
+
+  .pipe-port.out {
+    right: -6.5px;
+    cursor: crosshair;
+  }
+
+  /* An 11px circle is a hard target mid-drag: extend the hit area invisibly
+     (elementFromPoint credits the pseudo-element to the port). */
+  .pipe-port::before {
+    content: '';
+    position: absolute;
+    inset: -7px;
+    border-radius: 50%;
+  }
+
+  .pipe-port:hover {
+    transform: scale(1.3);
+    background-color: currentColor;
+  }
+
+  /* While a wire is in flight, the ports it can legally land on grow. */
+  .pipe-canvas.connecting-image .pipe-port[data-port-dir='in'][data-port-type='image'],
+  .pipe-canvas.connecting-mesh .pipe-port[data-port-dir='in'][data-port-type='mesh'] {
+    transform: scale(1.35);
+  }
+
+  .pipe-canvas.connecting-image .pipe-port[data-port-dir='in'][data-port-type='mesh'],
+  .pipe-canvas.connecting-mesh .pipe-port[data-port-dir='in'][data-port-type='image'] {
+    opacity: 0.35;
+  }
+
+  .pipe-port-label {
+    font-family: var(--font-mono);
+    font-size: 0.643rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+  }
+
+  /* --------------------------------------------------------------------------
+     Node bodies
+     -------------------------------------------------------------------------- */
+  .pipe-node-body {
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    padding: 4px 12px 12px;
+  }
+
+  .pipe-node-body:empty {
+    display: none;
+  }
+
+  .pipe-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .pipe-field.row {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .pipe-field-label {
+    font-size: 0.857rem;
+    color: var(--text-secondary);
+  }
+
+  .pipe-field-inline {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .pipe-hint,
+  .pipe-note {
+    font-size: 0.714rem;
+    line-height: 1.45;
+    color: var(--text-muted);
+  }
+
+  .pipe-hint {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+  }
+
+  .pipe-hint code {
+    font-family: var(--font-mono);
+    font-size: 0.643rem;
+    background-color: var(--bg-app);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    padding: 0 3px;
+  }
+
+  /* Node-width form controls: the shared 280px metric does not fit here. */
+  .pipe-node .ui-input-wrapper,
+  .pipe-node .ui-select-wrapper,
+  .pipe-node .ui-slider-wrapper {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .pipe-node .ui-segmented {
+    width: 100%;
+  }
+
+  .pipe-node .ui-segmented-item {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 4px 6px;
+    justify-content: center;
+  }
+
+  .pipe-node .btn {
+    min-width: auto;
+  }
+
+  .pipe-icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 26px;
+    height: 26px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background-color: var(--bg-app);
+    color: var(--text-secondary);
+    transition: background-color var(--transition-fast), color var(--transition-fast);
+  }
+
+  .pipe-icon-btn:hover {
+    background-color: var(--bg-surface-hover);
+    color: var(--text-primary);
+  }
+
+  .pipe-disclosure {
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    padding-top: 2px;
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  .pipe-disclosure-btn {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 0 1px;
+    font-family: var(--font-mono);
+    font-size: 0.714rem;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--text-muted);
+    transition: color var(--transition-fast);
+  }
+
+  .pipe-disclosure-btn:hover {
+    color: var(--text-primary);
+  }
+
+  .pipe-disclosure-btn svg {
+    transition: transform var(--transition-fast);
+  }
+
+  .pipe-disclosure-btn.open svg {
+    transform: rotate(90deg);
+  }
+
+  /* Image Input: thumbnail + file name + clear */
+  .pipe-image-pick {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    min-width: 0;
+  }
+
+  .pipe-thumb {
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    width: 44px;
+    height: 44px;
+    overflow: hidden;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background-color: var(--bg-app);
+    color: var(--text-muted);
+  }
+
+  .pipe-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .pipe-image-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+    flex: 1;
+  }
+
+  .pipe-image-name {
+    font-size: 0.857rem;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* --------------------------------------------------------------------------
+     Validation rail
+     -------------------------------------------------------------------------- */
+  .pipe-validation {
+    position: absolute;
+    left: var(--pipe-inset);
+    bottom: calc(var(--pipe-inset) + var(--bottomdock-height, 0px));
+    z-index: 1;
+    max-width: calc(100% - var(--pipe-inset) * 2);
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px 18px;
+    min-height: 34px;
+    padding: 7px 12px;
+    border-radius: var(--radius-md);
+  }
+
+  .pipe-view.is-docked .pipe-validation {
+    max-width: calc(100% - var(--pipe-dock-width) - var(--pipe-inset) * 3);
+  }
+
+  .pipe-validation.error {
+    background-color: color-mix(in oklab, var(--danger-subtle) 92%, transparent);
+  }
+
+  .pipe-validation.warning {
+    background-color: color-mix(in oklab, var(--warning-subtle) 92%, transparent);
+  }
+
+  .pipe-issue {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.857rem;
+    line-height: 1.35;
+  }
+
+  .pipe-issue svg {
+    flex-shrink: 0;
+  }
+
+  .pipe-issue.ok {
+    color: var(--success);
+  }
+
+  .pipe-issue.error {
+    color: var(--danger);
+  }
+
+  .pipe-issue.warning {
+    color: var(--warning);
+  }
+}

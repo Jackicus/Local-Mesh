@@ -64,6 +64,16 @@ export const APP_SHORTCUTS: ShortcutDefinition[] = [
     category: 'Navigation',
     handler: () => dockStore.toggle(),
   },
+  {
+    id: 'toggle-logs',
+    description: 'Toggle Log Dock',
+    key: 'j',
+    ctrlOrMeta: true,
+    keys: formatShortcutKeys({ key: 'j', ctrlOrMeta: true }),
+    type: 'registered',
+    category: 'Navigation',
+    handler: () => dockStore.toggleBottom(),
+  },
 
   // 2. System & Window Defaults (Runtime & desktop chrome defaults)
   {

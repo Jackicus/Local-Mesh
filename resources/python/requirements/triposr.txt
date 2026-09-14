@@ -1,0 +1,13 @@
+# TripoSR (repo imported from ~/.local-mesh/repos/TripoSR via sys.path).
+# Upstream pins omegaconf==2.3.0, transformers==4.35.0, trimesh==4.0.5 etc.;
+# loosened here so one venv can host several models. Dropped from upstream:
+#   torchmcubes  - CUDA extension that needs nvcc; replaced by shims/torchmcubes
+#                  (CPU marching cubes via PyMCubes from base.txt)
+#   xatlas, moderngl - only used by texture baking (bake_texture.py)
+#   gradio           - demo only
+#   rembg, huggingface-hub - already in base.txt
+omegaconf>=2.3
+einops>=0.7
+transformers>=4.35
+# tsr/utils.py imports imageio at module level (video export helper)
+imageio>=2.31

@@ -65,4 +65,53 @@ export {
   BookOpen as BookOpenIcon,
   Eye as EyeIcon,
   Search as SearchIcon,
+
+  // Local Mesh navigation
+  Workflow as WorkflowIcon,
+  Package as PackageIcon,
+  ScrollText as ScrollTextIcon,
+
+  // Models, Logs & Settings views
+  Download as DownloadIcon,
+  Trash2 as TrashIcon,
+  FolderOpen as FolderOpenIcon,
+  HardDrive as HardDriveIcon,
+  Play as PlayIcon,
+  Square as StopIcon,
+  Copy as CopyIcon,
+  ClipboardCopy as ClipboardCopyIcon,
+  Gauge as GaugeIcon,
+  Filter as FilterIcon,
+  ArrowDownToLine as FollowIcon,
+  Wrench as WrenchIcon,
+  XCircle as XCircleIcon,
+  LoaderCircle as LoaderIcon,
+  MemoryStick as MemoryIcon,
+  Ban as CancelIcon,
+  Eraser as EraserIcon,
+  Rows3 as GroupRowsIcon,
+  Unplug as UnplugIcon,
+
+  // Pipelines view
+  Maximize2 as FitViewIcon,
+  Dices as DiceIcon,
+  ChevronRight as ChevronRightIcon,
+
+  // Generate view (viewer toolbar, dock)
+  PanelRight as PanelRightIcon,
+  PanelRightClose as PanelRightCloseIcon,
+  Focus as FocusIcon,
+  Grid3x3 as GridIcon,
+  Pyramid as WireframeIcon,
+  Rotate3d as AutoRotateIcon,
+  ImagePlus as ImagePlusIcon,
+  Cuboid as MeshIcon,
+  Power as PowerIcon,
+  Shrink as ReduceIcon,
+  Waves as SmoothIcon,
+  Undo2 as UndoIcon,
+  Timer as TimerIcon,
+
+  // Bottom log dock
+  ChevronUp as ChevronUpIcon,
 } from 'lucide-react';

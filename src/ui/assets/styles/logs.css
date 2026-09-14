@@ -1,0 +1,279 @@
+/* ==========================================================================
+   logs — the reader inside the shell's bottom dock
+   ========================================================================== */
+
+@layer views {
+  /* Fills the dock; the list takes whatever the header leaves. Named as a
+     container so the narrow-width rules below still apply outside a view. */
+  .logs-panel-root {
+    container: view / inline-size;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    height: 100%;
+    padding: 8px 10px 10px;
+    gap: 8px;
+  }
+
+  /* --------------------------------------------------------------------------
+     Header: channel switch, toolbar, collapse
+     -------------------------------------------------------------------------- */
+  .logs-header {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  .logs-header .logs-toolbar {
+    flex: 1;
+  }
+
+  .logs-collapse-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    flex-shrink: 0;
+    border-radius: var(--radius-md);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: background-color var(--transition-fast), color var(--transition-fast);
+  }
+
+  .logs-collapse-btn:hover {
+    background-color: var(--bg-surface-hover);
+    color: var(--text-primary);
+  }
+
+  .logs-tab-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .logs-tab-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 9px;
+    background-color: var(--danger);
+    color: #ffffff;
+    font-family: var(--font-mono);
+    font-size: 0.714rem;
+    font-weight: 600;
+    line-height: 1;
+  }
+
+  /* --------------------------------------------------------------------------
+     Toolbar
+     -------------------------------------------------------------------------- */
+  .logs-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+
+  .logs-toolbar-filters,
+  .logs-toolbar-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  /* Compacted for the dock: the controls sit on one line where they fit */
+  .logs-toolbar .ui-select-wrapper.logs-source-select {
+    width: 116px;
+    min-width: 116px;
+  }
+
+  .logs-toolbar .ui-input-wrapper.logs-search {
+    width: 180px;
+    min-width: 130px;
+  }
+
+  .logs-channels.ui-segmented {
+    flex-shrink: 0;
+  }
+
+  .logs-toolbar .btn {
+    min-width: auto;
+  }
+
+  .logs-count {
+    font-family: var(--font-mono);
+    font-size: 0.786rem;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+    margin-right: 4px;
+  }
+
+  /* --------------------------------------------------------------------------
+     The panel: a terminal pane in the app ground, rows as a fixed grid
+     -------------------------------------------------------------------------- */
+  .logs-panel {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    background-color: oklch(from var(--bg-app) l c h / 0.55);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    font-family: var(--font-mono);
+    font-size: 0.786rem;
+    line-height: 1.5;
+    padding: 4px 0;
+  }
+
+  .logs-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 32px;
+    text-align: center;
+  }
+
+  .logs-empty-title {
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-secondary);
+  }
+
+  .logs-empty-hint {
+    font-family: var(--font-sans);
+    font-size: 0.857rem;
+    color: var(--text-muted);
+    max-width: 420px;
+    text-wrap: pretty;
+  }
+
+  .logs-truncated {
+    padding: 6px 12px;
+    color: var(--text-muted);
+    border-bottom: 1px dashed var(--border-subtle);
+    font-size: 0.714rem;
+  }
+
+  .logs-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 2px 12px;
+    color: var(--text-primary);
+  }
+
+  .logs-row:nth-child(even) {
+    background-color: oklch(from var(--bg-surface) l c h / 0.35);
+  }
+
+  .logs-row-error {
+    background-color: var(--danger-subtle);
+  }
+
+  .logs-row-error:nth-child(even) {
+    background-color: var(--danger-subtle);
+  }
+
+  .logs-row-debug {
+    color: var(--text-secondary);
+  }
+
+  .logs-time {
+    flex-shrink: 0;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .logs-level {
+    flex-shrink: 0;
+    width: 4ch;
+    text-transform: uppercase;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+  }
+
+  .logs-level-debug {
+    color: var(--text-muted);
+  }
+
+  .logs-level-info {
+    color: var(--text-secondary);
+  }
+
+  .logs-level-warn {
+    color: var(--warning);
+  }
+
+  .logs-level-error {
+    color: var(--danger);
+  }
+
+  .logs-source {
+    flex-shrink: 0;
+    width: 8ch;
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .logs-job {
+    flex-shrink: 0;
+    width: 6ch;
+    text-align: center;
+    border-radius: var(--radius-sm);
+    background-color: var(--accent-subtle);
+    color: var(--accent);
+    font-size: 0.714rem;
+    line-height: 1.6;
+  }
+
+  .logs-job:empty {
+    background: none;
+  }
+
+  .logs-message {
+    flex: 1;
+    min-width: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .logs-divider {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px 2px;
+    color: var(--accent);
+    font-size: 0.714rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .logs-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background-color: var(--border-subtle);
+  }
+
+  @container view (max-width: 640px) {
+    .logs-source {
+      display: none;
+    }
+    .logs-toolbar .ui-input-wrapper.logs-search {
+      width: 100%;
+    }
+  }
+}

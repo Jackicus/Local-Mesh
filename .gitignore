@@ -30,3 +30,7 @@ pnpm-debug.log*
 *.sln
 *.sw?
 .DS_Store
+.shots/
+
+# Python bytecode (resources/python is run from ~/.local-mesh/scripts)
+__pycache__/

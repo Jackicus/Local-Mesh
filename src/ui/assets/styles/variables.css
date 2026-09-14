@@ -29,6 +29,7 @@
     /* Layout Metrics */
     --topbar-height: 44px;
     --leftdock-width: 240px;
+    --bottomdock-bar-height: 30px;
 
     /* Component Sizing & Layout Constants */
     --form-control-width: 280px;
@@ -43,6 +44,8 @@
     --z-titlebar-fill: 1;
     --z-left-dock: 2;
     --z-titlebar: 3;
+    /* The log dock floats over the content but never over the overlays */
+    --z-bottom-dock: 4;
 
     /* Overlay Stacking Layers */
     --z-tooltip: 1000;

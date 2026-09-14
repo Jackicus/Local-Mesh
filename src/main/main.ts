@@ -3,13 +3,33 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { CLAUDE_MD_DIRS, IPC_CHANNELS } from '../core/types';
-import { listNotes, addNote, deleteNote, closeDb } from './db';
-import { log, installCrashLogging } from './logger';
+import { killEnvChildren } from './envManager';
+import { registerAllHandlers } from './ipc';
+import { initLogger, installCrashLogging, log } from './logger';
+import { killDownloadChildren } from './modelManager';
+import { ensureTree, getPaths } from './paths';
+import { ensureDefaultPipeline } from './pipelines';
+import { shutdownQueue } from './queue';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL'];
 const RENDERER_DIST = path.join(__dirname, '..', 'dist');
+
+// Linux has no icon embedded in the executable the way Windows/macOS do — the
+// taskbar and alt-tab fall back to a generic placeholder unless BrowserWindow
+// is handed one. Lives outside dist/ so dev and production resolve it alike.
+const APP_ICON = path.join(__dirname, '..', 'resources', 'icon.png');
+
+if (process.platform === 'linux') {
+  // Run natively on Wayland where it's available, X11/XWayland otherwise.
+  // Without the hint, Electron's default varies by version and distro build.
+  app.commandLine.appendSwitch('ozone-platform-hint', 'auto');
+
+  // productName is "Local Mesh"; XDG dirs conventionally avoid spaces and caps,
+  // so pin the config dir rather than inheriting ~/.config/Local Mesh.
+  app.setPath('userData', path.join(app.getPath('appData'), 'local-mesh'));
+}
 
 interface WindowState {
   x?: number;
@@ -116,21 +136,6 @@ function registerIpcHandlers() {
     node: process.versions.node,
     platform: process.platform,
   }));
-
-  // SQLite notes (src/main/db.ts) — inputs validated before touching the db
-  ipcMain.handle(IPC_CHANNELS.NOTES_LIST, () => listNotes());
-
-  ipcMain.handle(IPC_CHANNELS.NOTES_ADD, (_event, text: unknown) => {
-    if (typeof text !== 'string') return null;
-    const trimmed = text.trim();
-    if (!trimmed || trimmed.length > 500) return null;
-    return addNote(trimmed);
-  });
-
-  ipcMain.handle(IPC_CHANNELS.NOTES_DELETE, (_event, id: unknown) => {
-    if (typeof id !== 'number' || !Number.isInteger(id)) return false;
-    return deleteNote(id);
-  });
 }
 
 // Dev-only: lets the Developer view read/edit src/ui/*/CLAUDE.md. The dir key is
@@ -176,8 +181,12 @@ function createWindow() {
     y: savedState.y,
     minWidth: 640,
     minHeight: 480,
+    // Labels the window in the taskbar/alt-tab before the renderer's <title>
+    // lands — visible on Linux, where there is no titlebar to hide it.
+    title: 'Local Mesh',
     frame: false,
     titleBarStyle: 'hidden',
+    ...(process.platform === 'linux' ? { icon: APP_ICON } : {}),
     backgroundColor: '#2a2a2a', // pre-paint color; keep close to --bg-app (dark) in variables.css
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -269,14 +278,45 @@ app.on('activate', () => {
   }
 });
 
-app.on('will-quit', () => {
-  closeDb();
+// Quitting has to wait for the python worker to stop, so the first `before-quit`
+// is deferred and re-issued once shutdown has run (or timed out).
+const SHUTDOWN_TIMEOUT_MS = 8000;
+let shuttingDown = false;
+let readyToQuit = false;
+
+app.on('before-quit', (event) => {
+  if (readyToQuit) return;
+  event.preventDefault();
+  if (shuttingDown) return;
+  shuttingDown = true;
+  log.general.info('shutting down');
+  killEnvChildren();
+  killDownloadChildren();
+  const finish = () => {
+    readyToQuit = true;
+    app.quit();
+  };
+  const guard = setTimeout(finish, SHUTDOWN_TIMEOUT_MS);
+  shutdownQueue().finally(() => {
+    clearTimeout(guard);
+    finish();
+  });
 });
 
 app.whenReady().then(() => {
+  ensureTree();
+  initLogger(getPaths().logs);
   installCrashLogging();
-  log.info(`app started v${app.getVersion()} (electron ${process.versions.electron})`);
+  log.general.info(
+    `Local Mesh v${app.getVersion()} started — electron ${process.versions.electron}, ${process.platform}, root ${getPaths().root}`
+  );
+  try {
+    ensureDefaultPipeline();
+  } catch (err) {
+    log.general.error(`startup task failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
   registerIpcHandlers();
+  registerAllHandlers();
   if (VITE_DEV_SERVER_URL) {
     registerClaudeMdHandlers();
   }

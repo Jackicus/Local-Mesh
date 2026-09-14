@@ -1,0 +1,27 @@
+# What the worker itself needs, whatever model is loaded.
+# torch / torchvision are NOT listed here: the main process installs them
+# from manifest.json.torch (pinned cu126 build for Pascal cards).
+
+# Hugging Face downloads (hf_download.py). huggingface_hub >= 1.0 dropped
+# hf_transfer; hf_xet is the accelerated backend now.
+huggingface_hub>=1.0
+hf_xet>=1.0
+
+# Mesh handling, post-processing and export (worker.py)
+numpy>=1.26
+trimesh>=4.4
+scipy>=1.10
+fast-simplification>=0.1.9
+scikit-image>=0.22
+PyMCubes>=0.1.4
+
+# Image loading and background removal (CPU onnxruntime; the u2netp model
+# is ~5 MB and is fetched by rembg on first use)
+pillow>=10
+rembg[cpu]>=2.0.60
+
+# Process stats for the `memory` event
+psutil>=5.9
+
+pyyaml>=6
+tqdm>=4.66

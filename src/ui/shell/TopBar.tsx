@@ -9,7 +9,7 @@ interface TopBarProps {
   title?: string;
 }
 
-export const TopBar: React.FC<TopBarProps> = ({ title = 'Desktop Application' }) => {
+export const TopBar: React.FC<TopBarProps> = ({ title = 'Local Mesh' }) => {
   const [dockState, store] = useDockStore();
   const toggleDockKey = getShortcutKeys('toggle-dock');
 

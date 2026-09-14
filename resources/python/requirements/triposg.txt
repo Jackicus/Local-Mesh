@@ -1,0 +1,19 @@
+# TripoSG (repo imported from ~/.local-mesh/repos/TripoSG via sys.path).
+# From upstream requirements.txt minus:
+#   numpy==1.22.3 - no Python 3.11 wheels and incompatible with rembg>=2.0.80
+#   diso          - CUDA extension (sdist only, needs nvcc); the flash decoder
+#                   that uses it is disabled, shims/diso satisfies the import
+#   torch-cluster - only the VAE *encoder* path needs it (commented upstream)
+#   pymeshlab     - only the CLI script's face reduction uses it
+#   huggingface_hub, trimesh, scikit-image, scipy - already in base.txt
+# accelerate is not in upstream's list but diffusers needs it for
+# enable_model_cpu_offload(), which low-VRAM mode relies on.
+accelerate>=0.26
+diffusers>=0.30
+transformers>=4.40
+einops>=0.7
+omegaconf>=2.3
+opencv-python-headless>=4.9
+jaxtyping>=0.2.25
+typeguard>=4
+peft>=0.10

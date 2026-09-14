@@ -22,7 +22,7 @@ export default defineConfig({
             attrs: {
               'http-equiv': 'Content-Security-Policy',
               content:
-                "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; frame-src 'none'",
+                "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; object-src 'none'; frame-src 'none'",
             },
             injectTo: 'head-prepend',
           },
@@ -37,10 +37,6 @@ export default defineConfig({
           build: {
             outDir: 'dist-electron',
             minify: false,
-            rolldownOptions: {
-              // Native module: loaded from node_modules at runtime, never bundled
-              external: ['better-sqlite3'],
-            },
           },
         },
       },
@@ -69,6 +65,13 @@ export default defineConfig({
       },
     ]),
   ],
+  build: {
+    // Never inline fonts. The build CSP keeps font-src at 'self', so a subset
+    // small enough for Vite to inline would ship as a data: URI and be blocked
+    // at runtime. Returning undefined leaves other assets on the default limit.
+    assetsInlineLimit: (filePath: string) =>
+      /\.(woff2?|ttf|otf|eot)$/i.test(filePath) ? false : undefined,
+  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

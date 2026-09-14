@@ -1,0 +1,940 @@
+/* ==========================================================================
+   generate view
+
+   A drafting table, not a page: the WebGL viewport is the whole screen and
+   every control floats above it on a frosted plate. Plates share one recipe
+   (translucent --bg-surface, blur, hairline border) so the chrome reads as a
+   single instrument laid over the model; the accent is spent only on live
+   things — progress, active toggles, the run button.
+   ========================================================================== */
+
+@layer views {
+  /* Escape .shell-content's padding so the canvas reaches the window edges;
+     the overlays below keep themselves clear of the titlebar. */
+  .gen-view {
+    position: relative;
+    height: 100vh;
+    min-width: 0;
+    margin: calc(-1 * (var(--topbar-height) + 20px)) -24px -24px;
+    overflow: hidden;
+    --gen-plate-bg: color-mix(in oklab, var(--bg-surface) 92%, transparent);
+    --gen-inset: 12px;
+    --gen-dock-width: 340px;
+  }
+
+  .gen-canvas {
+    position: absolute;
+    inset: 0;
+  }
+
+  .gen-canvas canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    outline: none;
+  }
+
+  /* --------------------------------------------------------------------------
+     Shared plate + label voice
+     -------------------------------------------------------------------------- */
+  .gen-dock,
+  .gen-status,
+  .gen-viewer-tools,
+  .gen-mesh-tools,
+  .gen-popover,
+  .gen-plate,
+  .gen-scene-note,
+  .gen-dock-open {
+    background-color: var(--gen-plate-bg);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--border-subtle);
+    box-shadow: 0 8px 28px oklch(0% 0 0 / 0.22);
+  }
+
+  .gen-status-label,
+  .gen-mesh-btn,
+  .gen-popover-title,
+  .gen-popover-meta,
+  .gen-section-title,
+  .gen-dock-title,
+  .gen-kv-key,
+  .gen-plate-stats,
+  .gen-drop-hint,
+  .gen-job-sub,
+  .gen-output-meta,
+  .gen-note {
+    font-family: var(--font-mono);
+    font-size: 0.688rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    color: var(--text-muted);
+  }
+
+  /* --------------------------------------------------------------------------
+     Viewport overlays: caption, loading note, empty state
+     -------------------------------------------------------------------------- */
+  .gen-plate,
+  .gen-scene-note {
+    position: absolute;
+    top: calc(var(--topbar-height) + var(--gen-inset));
+    left: var(--gen-inset);
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    padding: 7px 12px;
+    border-radius: var(--radius-md);
+    pointer-events: none;
+    max-width: 320px;
+  }
+
+  .gen-plate-name {
+    font-size: 0.857rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .gen-scene-note {
+    top: calc(var(--topbar-height) + var(--gen-inset));
+    font-size: 0.857rem;
+    color: var(--text-secondary);
+  }
+
+  .gen-view.is-docked .gen-plate,
+  .gen-view.is-docked .gen-scene-note {
+    max-width: calc(100% - var(--gen-dock-width) - var(--gen-inset) * 3);
+  }
+
+  .gen-plate + .gen-scene-note {
+    top: calc(var(--topbar-height) + var(--gen-inset) + 44px);
+  }
+
+  .gen-spin {
+    animation: gen-spin 0.9s linear infinite;
+    color: var(--accent);
+  }
+
+  @keyframes gen-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  .gen-empty {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    color: var(--text-muted);
+    pointer-events: none;
+    text-align: center;
+    padding: 0 24px;
+  }
+
+  /* Centre the hint in the visible part of the scene, not under the dock */
+  .gen-view.is-docked .gen-empty {
+    right: calc(var(--gen-dock-width) + var(--gen-inset) * 2);
+  }
+
+  .gen-empty-title {
+    font-family: var(--font-mono);
+    font-size: 0.857rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    color: var(--text-secondary);
+    margin-top: 6px;
+  }
+
+  .gen-empty-hint {
+    font-size: 0.929rem;
+    color: var(--text-muted);
+  }
+
+  /* --------------------------------------------------------------------------
+     Bottom band: worker readout on the left, viewer tools on the right,
+     shortened while the dock is out so the two can never collide
+     -------------------------------------------------------------------------- */
+  .gen-hud {
+    position: absolute;
+    left: var(--gen-inset);
+    right: var(--gen-inset);
+    bottom: calc(var(--gen-inset) + var(--bottomdock-height, 0px));
+    z-index: 1;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 12px;
+    pointer-events: none;
+  }
+
+  .gen-view.is-docked .gen-hud {
+    right: calc(var(--gen-dock-width) + var(--gen-inset) * 2);
+  }
+
+  .gen-hud > * {
+    pointer-events: auto;
+  }
+
+  /* Camera tools and mesh tools travel together on the right of the band; the
+     wrapper only exists so the two plates keep a gap and stay off the readout. */
+  .gen-hud-tools {
+    display: flex;
+    align-items: flex-end;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-left: auto;
+    min-width: 0;
+  }
+
+  .gen-hud .gen-hud-tools {
+    pointer-events: none;
+  }
+
+  .gen-hud-tools > * {
+    pointer-events: auto;
+  }
+
+  .gen-status {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex: 0 1 320px;
+    min-width: 0;
+    padding: 10px 12px;
+    border-radius: var(--radius-md);
+  }
+
+  .gen-status-line {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .gen-status-sep {
+    flex: 1;
+    height: 1px;
+    background-color: var(--border-subtle);
+  }
+
+  .gen-status-model {
+    font-size: 0.786rem;
+    color: var(--text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .gen-status-vram,
+  .gen-status-job {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .gen-status-vram {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .gen-status-vram .gen-bar {
+    flex: 1;
+  }
+
+  .gen-status-value {
+    font-family: var(--font-mono);
+    font-size: 0.688rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+  }
+
+  .gen-status-message {
+    font-size: 0.786rem;
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .gen-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background-color: var(--text-muted);
+  }
+
+  .gen-dot-accent {
+    background-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-subtle);
+    animation: gen-pulse 1.6s ease-in-out infinite;
+  }
+
+  .gen-dot-success {
+    background-color: var(--success);
+  }
+
+  .gen-dot-warning {
+    background-color: var(--warning);
+    animation: gen-pulse 1.6s ease-in-out infinite;
+  }
+
+  .gen-dot-danger {
+    background-color: var(--danger);
+  }
+
+  @keyframes gen-pulse {
+    50% {
+      opacity: 0.35;
+    }
+  }
+
+  /* --------------------------------------------------------------------------
+     Progress bars
+     -------------------------------------------------------------------------- */
+  .gen-bar {
+    height: 4px;
+    border-radius: 999px;
+    background-color: var(--bg-surface-active);
+    overflow: hidden;
+  }
+
+  .gen-bar-fill {
+    height: 100%;
+    border-radius: inherit;
+    background-color: var(--accent);
+    transition: width var(--transition-base);
+  }
+
+  .gen-bar-success .gen-bar-fill {
+    background-color: var(--success);
+  }
+
+  .gen-bar-warning .gen-bar-fill {
+    background-color: var(--warning);
+  }
+
+  .gen-bar-danger .gen-bar-fill {
+    background-color: var(--danger);
+  }
+
+  .gen-bar.is-indeterminate .gen-bar-fill {
+    animation: gen-sweep 1.4s ease-in-out infinite;
+  }
+
+  @keyframes gen-sweep {
+    0% {
+      transform: translateX(-110%);
+    }
+    100% {
+      transform: translateX(320%);
+    }
+  }
+
+  /* --------------------------------------------------------------------------
+     Viewer toolbar (bottom right) + the icon button shared with the dock
+     -------------------------------------------------------------------------- */
+  .gen-viewer-tools {
+    flex: none;
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 4px;
+    border-radius: var(--radius-md);
+  }
+
+  .gen-tool {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    transition: background-color var(--transition-fast), color var(--transition-fast),
+      transform var(--transition-fast);
+  }
+
+  .gen-tool:hover:not(:disabled) {
+    background-color: var(--bg-surface-hover);
+    color: var(--text-primary);
+  }
+
+  .gen-tool:active:not(:disabled) {
+    transform: scale(0.92);
+  }
+
+  .gen-tool.is-active {
+    background-color: var(--accent-subtle);
+    color: var(--accent);
+  }
+
+  .gen-tool:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .gen-tool-divider {
+    width: 1px;
+    height: 18px;
+    margin: 0 4px;
+    background-color: var(--border-subtle);
+  }
+
+  /* --------------------------------------------------------------------------
+     Mesh tools: same plate as the camera tools, but these change the model
+     rather than the view — labelled, and each opens its settings above itself.
+     -------------------------------------------------------------------------- */
+  .gen-mesh-tools {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 4px;
+    border-radius: var(--radius-md);
+  }
+
+  .gen-mesh-item {
+    position: relative;
+    display: flex;
+  }
+
+  .gen-mesh-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 30px;
+    padding: 0 10px;
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    transition: background-color var(--transition-fast), color var(--transition-fast),
+      transform var(--transition-fast);
+  }
+
+  .gen-mesh-btn:hover:not(:disabled) {
+    background-color: var(--bg-surface-hover);
+    color: var(--text-primary);
+  }
+
+  .gen-mesh-btn:active:not(:disabled) {
+    transform: scale(0.94);
+  }
+
+  .gen-mesh-btn.is-active {
+    background-color: var(--accent-subtle);
+    color: var(--accent);
+  }
+
+  /* Let the pointer through to the Tooltip wrapper so a disabled button can
+     still say why it is disabled. */
+  .gen-mesh-btn:disabled {
+    opacity: 0.4;
+    pointer-events: none;
+  }
+
+  .gen-mesh-btn-icon {
+    padding: 0 8px;
+  }
+
+  .gen-popover {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 0;
+    z-index: 4;
+    width: 210px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px;
+    border-radius: var(--radius-md);
+  }
+
+  .gen-popover-title {
+    color: var(--text-secondary);
+  }
+
+  .gen-popover-meta {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    letter-spacing: 0.04em;
+    text-transform: none;
+  }
+
+  /* The sm segmented control hard-codes a 64px floor; three of them don't fit
+     a popover this narrow, and here the labels are short enough not to need it. */
+  .gen-popover .ui-segmented-item {
+    min-width: 0;
+    padding: 5px 6px;
+    font-size: 0.786rem;
+  }
+
+  .gen-elapsed {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  /* --------------------------------------------------------------------------
+     Right dock
+     -------------------------------------------------------------------------- */
+  .gen-dock {
+    position: absolute;
+    top: calc(var(--topbar-height) + var(--gen-inset));
+    right: var(--gen-inset);
+    bottom: calc(var(--gen-inset) + var(--bottomdock-height, 0px));
+    z-index: 2;
+    width: var(--gen-dock-width);
+    max-width: calc(100% - var(--gen-inset) * 2);
+    display: flex;
+    flex-direction: column;
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+  }
+
+  /* The collapsed dock's handle: the Tooltip wrapper carries the position so
+     the bubble still anchors to the button. */
+  .gen-dock-open-wrap {
+    position: absolute;
+    top: calc(var(--topbar-height) + var(--gen-inset));
+    right: var(--gen-inset);
+    z-index: 2;
+  }
+
+  .gen-dock-open {
+    border-radius: var(--radius-md);
+    width: 32px;
+    height: 32px;
+  }
+
+  .gen-dock-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 8px 8px 14px;
+    border-bottom: 1px solid var(--border-subtle);
+    flex-shrink: 0;
+  }
+
+  .gen-dock-title {
+    color: var(--text-secondary);
+  }
+
+  .gen-dock-body {
+    flex: 1;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 4px 14px 16px;
+  }
+
+  /* --------------------------------------------------------------------------
+     Dock sections
+     -------------------------------------------------------------------------- */
+  .gen-section {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .gen-section:last-child {
+    border-bottom: none;
+  }
+
+  .gen-section-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 24px;
+  }
+
+  .gen-section-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: inherit;
+  }
+
+  .gen-chevron {
+    color: var(--text-muted);
+    transform: rotate(-90deg);
+    transition: transform var(--transition-fast);
+  }
+
+  .gen-chevron.is-open {
+    transform: rotate(0deg);
+  }
+
+  .gen-section-meta {
+    font-family: var(--font-mono);
+    font-size: 0.688rem;
+    color: var(--text-muted);
+    padding: 1px 6px;
+    border: 1px solid var(--border-subtle);
+    border-radius: 999px;
+  }
+
+  .gen-section-action {
+    margin-left: auto;
+  }
+
+  .gen-section-body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .gen-section-body .ui-select-wrapper {
+    width: 100%;
+  }
+
+  .gen-blank {
+    font-size: 0.857rem;
+    color: var(--text-muted);
+  }
+
+  .gen-meta-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .gen-link {
+    color: var(--accent);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  .gen-warn {
+    display: flex;
+    gap: 8px;
+    padding: 10px;
+    border-radius: var(--radius-md);
+    background-color: var(--warning-subtle);
+    color: var(--warning);
+  }
+
+  .gen-warn-body {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: 0.857rem;
+  }
+
+  /* --------------------------------------------------------------------------
+     Image staging
+     -------------------------------------------------------------------------- */
+  .gen-drop {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 18px 12px;
+    border: 1px dashed var(--border-strong);
+    border-radius: var(--radius-md);
+    color: var(--text-muted);
+    background-color: color-mix(in oklab, var(--bg-app) 45%, transparent);
+    transition: border-color var(--transition-fast), background-color var(--transition-fast),
+      color var(--transition-fast);
+  }
+
+  .gen-drop.is-over {
+    border-color: var(--accent);
+    background-color: var(--accent-subtle);
+    color: var(--accent);
+  }
+
+  .gen-drop-title {
+    font-size: 0.857rem;
+    color: var(--text-secondary);
+  }
+
+  .gen-drop.is-over .gen-drop-title {
+    color: var(--accent);
+  }
+
+  .gen-thumb-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(56px, 1fr));
+    gap: 8px;
+  }
+
+  .gen-thumb {
+    position: relative;
+    aspect-ratio: 1;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-subtle);
+    background-color: var(--bg-app);
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+  }
+
+  .gen-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .gen-thumb-sm {
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+  }
+
+  .gen-thumb-remove {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 16px;
+    height: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    font-size: 0.786rem;
+    line-height: 1;
+    color: var(--text-primary);
+    background-color: color-mix(in oklab, var(--bg-surface) 80%, transparent);
+    opacity: 0;
+    transition: opacity var(--transition-fast), background-color var(--transition-fast);
+  }
+
+  .gen-thumb:hover .gen-thumb-remove,
+  .gen-thumb-remove:focus-visible {
+    opacity: 1;
+  }
+
+  .gen-thumb-remove:hover {
+    background-color: var(--danger);
+    color: #ffffff;
+  }
+
+  /* --------------------------------------------------------------------------
+     Run
+     -------------------------------------------------------------------------- */
+  .gen-run {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .gen-run-note {
+    font-size: 0.786rem;
+    color: var(--text-muted);
+    line-height: 1.5;
+    text-wrap: pretty;
+  }
+
+  /* --------------------------------------------------------------------------
+     Queue
+     -------------------------------------------------------------------------- */
+  .gen-job-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .gen-job {
+    display: flex;
+    gap: 10px;
+    padding: 10px;
+    border-radius: var(--radius-md);
+    /* Set into the plate rather than onto it — --bg-block matches the plate
+       in the light theme, --bg-app is a step down from it in both. */
+    background-color: color-mix(in oklab, var(--bg-app) 60%, transparent);
+    border: 1px solid var(--border-subtle);
+  }
+
+  .gen-job-body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .gen-job-line {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .gen-job-name {
+    font-size: 0.857rem;
+    font-weight: 500;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .gen-job-sub {
+    color: var(--text-muted);
+  }
+
+  .gen-job-model,
+  .gen-job-time {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .gen-job-progress {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .gen-job-error {
+    font-size: 0.786rem;
+    line-height: 1.45;
+    color: var(--danger);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .gen-job-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+
+  .gen-job-actions .btn-sm {
+    min-width: auto;
+    padding: 3px 8px;
+  }
+
+  /* --------------------------------------------------------------------------
+     Engine readout
+     -------------------------------------------------------------------------- */
+  .gen-kv {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .gen-kv-value {
+    font-size: 0.857rem;
+    color: var(--text-secondary);
+    text-align: right;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* --------------------------------------------------------------------------
+     Outputs
+     -------------------------------------------------------------------------- */
+  .gen-output-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .gen-output {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 0;
+  }
+
+  .gen-output:not(:last-child) {
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .gen-output-open {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 4px 6px;
+    margin-left: -6px;
+    border-radius: var(--radius-sm);
+    text-align: left;
+    transition: background-color var(--transition-fast);
+  }
+
+  .gen-output-open:hover {
+    background-color: var(--bg-surface-hover);
+  }
+
+  .gen-output-name {
+    font-size: 0.857rem;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* --------------------------------------------------------------------------
+     Window-wide drop veil
+     -------------------------------------------------------------------------- */
+  .gen-veil {
+    position: absolute;
+    inset: var(--gen-inset);
+    top: calc(var(--topbar-height) + var(--gen-inset));
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px dashed var(--accent);
+    border-radius: var(--radius-lg);
+    background-color: color-mix(in oklab, var(--accent) 12%, transparent);
+    backdrop-filter: blur(2px);
+    pointer-events: none;
+  }
+
+  .gen-veil p {
+    font-family: var(--font-mono);
+    font-size: 0.786rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    color: var(--accent);
+  }
+
+  /* Narrow windows: the dock keeps its width, so the readout yields — the
+     tools act on what is on screen and have nowhere else to go. */
+  @media (max-width: 760px) {
+    .gen-view.is-docked .gen-status {
+      display: none;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .gen-spin,
+    .gen-dot-accent,
+    .gen-dot-warning,
+    .gen-bar.is-indeterminate .gen-bar-fill {
+      animation: none;
+    }
+  }
+}
