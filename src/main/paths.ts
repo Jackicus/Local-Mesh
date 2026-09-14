@@ -53,6 +53,22 @@ export function getRembgDir(): string {
   return path.join(getPaths().root, 'rembg');
 }
 
+/**
+ * `TORCH_HOME` for anything that goes through `torch.hub`. TRELLIS loads its
+ * DINOv2 conditioner with `torch.hub.load('facebookresearch/dinov2', ...)`,
+ * which is a GitHub clone plus a ~1.1 GB checkpoint from Meta — not Hugging
+ * Face, so the weights step cannot fetch it. The model's `postInstall` hook
+ * seeds it here and the worker reads it back offline.
+ */
+export function getTorchHubDir(): string {
+  return path.join(getPaths().root, 'torch-hub');
+}
+
+/** Generated at every model dependency install: pins torch to the build setup chose. */
+export function getConstraintsPath(): string {
+  return path.join(getPaths().root, 'constraints.txt');
+}
+
 export function getSettingsPath(): string {
   return path.join(getPaths().root, 'settings.json');
 }
@@ -62,6 +78,7 @@ export function ensureTree(): void {
   // `scripts` points into the read-only app bundle, so it is not ours to create.
   for (const dir of [
     p.root, p.env, p.models, p.outputs, p.inputs, p.pipelines, p.logs, getReposDir(), getRembgDir(),
+    getTorchHubDir(),
   ]) {
     fs.mkdirSync(dir, { recursive: true });
   }

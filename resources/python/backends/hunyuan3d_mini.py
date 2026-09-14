@@ -1,4 +1,11 @@
-"""Hunyuan3D 2 mini - shape only (`hy3dgen.shapegen`), never `hy3dgen.texgen`.
+"""Hunyuan3D 2 - shape only (`hy3dgen.shapegen`), never `hy3dgen.texgen`.
+
+Two models share this module: the 0.6B `hunyuan3d-2mini` (`Backend`) and the
+1.1B standard `hunyuan3d-2` (`Hunyuan3D2Backend`). They are the same code path
+down to the checkpoint - identical pipeline class, clone and requirements file -
+so the subclass only swaps the DiT subfolder names. backends/registry.py maps
+each model id to the right class.
+
 
 The repo is cloned to ~/.local-mesh/repos/Hunyuan3D-2 and put on sys.path by
 worker.py, so `import hy3dgen` resolves without a pip install.
@@ -34,6 +41,12 @@ SUBFOLDERS = {
     "standard": "hunyuan3d-dit-v2-mini",
     "fast": "hunyuan3d-dit-v2-mini-fast",
 }
+# The 1.1B standard model: same repo layout, different folder names.
+SUBFOLDERS_V2_0 = {
+    "turbo": "hunyuan3d-dit-v2-0-turbo",
+    "standard": "hunyuan3d-dit-v2-0",
+    "fast": "hunyuan3d-dit-v2-0-fast",
+}
 DEFAULT_VARIANT = os.environ.get("LOCAL_MESH_HUNYUAN_VARIANT", "turbo")
 
 _PCT_CONDITION = 12.0
@@ -68,6 +81,9 @@ def _subfolder_weight_bytes(model_dir: str, subfolder: str) -> int:
 
 class Backend(BaseBackend):
     name = "hunyuan3d_mini"
+    # Overridden by Hunyuan3D2Backend; everything else is shared.
+    subfolders = SUBFOLDERS
+    subfolder_glob = "hunyuan3d-dit-v2-mini*"
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -76,22 +92,23 @@ class Backend(BaseBackend):
 
     @classmethod
     def estimate_fp32_weight_bytes(cls, model_dir: str) -> Optional[int]:
-        sizes = [_subfolder_weight_bytes(model_dir, sub) for sub in SUBFOLDERS.values()]
+        sizes = [_subfolder_weight_bytes(model_dir, sub) for sub in cls.subfolders.values()]
         largest = max(sizes) if sizes else 0
         return largest or None
 
     # -- loading ----------------------------------------------------------
 
     def _resolve_subfolder(self, variant: str) -> str:
-        wanted = SUBFOLDERS.get(variant, SUBFOLDERS[DEFAULT_VARIANT])
+        subfolders = self.subfolders
+        wanted = subfolders.get(variant, subfolders[DEFAULT_VARIANT])
         if os.path.isdir(os.path.join(self.model_dir, wanted)):
             return wanted
-        for name in SUBFOLDERS.values():
+        for name in subfolders.values():
             if os.path.isdir(os.path.join(self.model_dir, name)):
                 self.log("warn", f"{wanted} is not downloaded; falling back to {name}")
                 return name
         raise FileNotFoundError(
-            f"no hunyuan3d-dit-v2-mini* subfolder under {self.model_dir}; "
+            f"no {self.subfolder_glob} subfolder under {self.model_dir}; "
             "re-download the model from the Models view")
 
     def _build(self, subfolder: str) -> None:
@@ -232,4 +249,18 @@ class Backend(BaseBackend):
         return mesh
 
 
-__all__ = ["Backend", "Cancelled", "SUBFOLDERS"]
+class Hunyuan3D2Backend(Backend):
+    """Hunyuan3D 2 standard (1.1B) - `tencent/Hunyuan3D-2`.
+
+    Only the DiT subfolder names differ from the mini: `hunyuan3d-dit-v2-0`,
+    `-0-turbo`, `-0-fast`, each a single ~4.93 GB fp16 checkpoint that again
+    carries the VAE and the DINOv2 conditioner inside it. Same clone
+    (repos/Hunyuan3D-2), same requirements file, same conditioner offload.
+    """
+
+    name = "hunyuan3d_2"
+    subfolders = SUBFOLDERS_V2_0
+    subfolder_glob = "hunyuan3d-dit-v2-0*"
+
+
+__all__ = ["Backend", "Hunyuan3D2Backend", "Cancelled", "SUBFOLDERS", "SUBFOLDERS_V2_0"]

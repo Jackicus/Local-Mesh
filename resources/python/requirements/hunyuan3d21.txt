@@ -1,0 +1,26 @@
+# Hunyuan3D 2.1 shape-only dependencies for `hy3dshape`, imported from
+# ~/.local-mesh/repos/Hunyuan3D-2.1/hy3dshape via sys.path (the package sits one
+# level down from the clone root — see manifest.json's `subdir`).
+#
+# Derived by walking the real import chain of `hy3dshape`, not from upstream's
+# requirements.txt, which also carries the texture pipeline (xatlas, pygltflib)
+# and the Gradio demo (gradio, fastapi, uvicorn, rembg, onnxruntime). Upstream
+# has pytorch_lightning commented out and nothing on the shape path imports it.
+#
+# torch / torchvision are installed separately by the main process and pinned by
+# the generated ~/.local-mesh/constraints.txt during this install.
+diffusers>=0.30
+# hy3dshape.models.conditioner builds a Dinov2Config by hand with 4.x field
+# names, so the 5.x rename would break loading.
+transformers>=4.46,<5
+accelerate>=0.26
+safetensors>=0.4
+einops>=0.7
+omegaconf>=2.3
+opencv-python-headless>=4.9
+# hy3dshape.postprocessors imports pymeshlab at package import time
+pymeshlab>=2023.12
+# hy3dshape.models.autoencoders.surface_extractors: `from skimage import measure`
+scikit-image>=0.22
+pyyaml>=6
+tqdm>=4.66

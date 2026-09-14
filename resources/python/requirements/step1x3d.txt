@@ -1,0 +1,43 @@
+# Step1X-3D geometry-only dependencies (repo imported from
+# ~/.local-mesh/repos/Step1X-3D via sys.path).
+#
+# `step1x3d_geometry/models/pipelines/pipeline.py` does a bare
+# `import step1x3d_geometry`, and that package's __init__ ends with
+# `from . import data, models, systems` — so the *training* tree is imported too
+# and its module-level imports all have to resolve. The list below is exactly
+# what that import chain needs; three of its dependencies are satisfied by
+# ../shims instead of real packages:
+#   streaming (mosaicml-streaming) - drags in boto3/azure/oci, dataloader only
+#   wandb                          - experiment tracking, training only
+# (`diso` was already shimmed for TripoSG; surface_extractor_type='mc' keeps us
+#  off that path anyway.)
+#
+# Dropped from upstream requirements.txt: nvdiffrast and pytorch3d (git+ source
+# CUDA builds), kaolin, torch-cluster (only the VAE *encoder* calls
+# torch_cluster.fps, and image->mesh never encodes), deepspeed, sageattention,
+# gradio, spaces, open3d, xatlas, cupy, bpy-adjacent bits and the training-only
+# tensorboard/datasets/pandas stack.
+#
+# torch / torchvision are installed separately by the main process and pinned by
+# the generated ~/.local-mesh/constraints.txt during this install.
+diffusers>=0.32
+transformers>=4.48,<5
+accelerate>=1.0
+safetensors>=0.4
+einops>=0.8
+omegaconf>=2.3
+jaxtyping>=0.2.28
+typeguard>=4
+# step1x3d_geometry/__init__.py and systems/base.py import pytorch_lightning
+pytorch-lightning>=2.2
+# models/autoencoders/transformers/attention.py: timm.models.vision_transformer
+timm>=0.9
+# remove_floater / reduce_face / remove_degenerate_face in the pipeline
+pymeshlab>=2023.12
+opencv-python-headless>=4.10
+# data/base.py and utils/saving.py import these at module level
+imageio>=2.31
+matplotlib>=3.7
+# conditional_encoders/t5_encoder.py: `from bs4 import BeautifulSoup`
+beautifulsoup4>=4.12
+# already in base.txt: numpy scipy pillow trimesh rembg scikit-image tqdm huggingface_hub

@@ -5,7 +5,9 @@
 # gradio, fastapi, uvicorn, onnxruntime) and minus torch/torchvision, which
 # main installs separately. opencv-python-headless replaces opencv-python.
 diffusers>=0.30
-transformers>=4.48
+# hy3dgen's conditioner builds a Dinov2Config by hand with transformers 4.x
+# field names, so 5.x would break loading.
+transformers>=4.48,<5
 accelerate>=0.26
 safetensors>=0.4
 einops>=0.7

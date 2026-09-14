@@ -4,7 +4,7 @@ import path from 'node:path';
 import readline from 'node:readline';
 import type { WorkerCommand, WorkerEvent } from '../core/types';
 import { log } from './logger';
-import { getRembgDir } from './paths';
+import { getRembgDir, getTorchHubDir } from './paths';
 import type { ProcessExit } from './proc';
 
 /**
@@ -43,6 +43,11 @@ export class WorkerProcess extends EventEmitter {
         // rembg's cache dir, pre-seeded during env setup so background removal
         // never has to download the u2netp ONNX from GitHub here.
         U2NET_HOME: getRembgDir(),
+        // torch.hub's cache. HF_HUB_OFFLINE does not cover torch.hub, and
+        // TRELLIS loads its DINOv2 conditioner from GitHub + Meta's CDN rather
+        // than the Hub; the model's postInstall hook seeded this directory, and
+        // torch.hub reuses a cached repo without touching the network.
+        TORCH_HOME: getTorchHubDir(),
       },
       stdio: ['pipe', 'pipe', 'pipe'],
     });

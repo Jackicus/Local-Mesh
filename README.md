@@ -14,8 +14,8 @@ node-based pipeline with a live 3D viewer.
   your card, and installs each model's dependencies. Nothing touches your
   system Python.
 - **Any NVIDIA GPU.** From a GTX 1080 to an RTX 5090: setup reads the card's
-  compute capability and installs a matching torch. Models are chosen and tuned
-  to run in 8 GB of VRAM, so they fly on bigger cards.
+  compute capability and installs a matching torch. Models range from 4 GB to
+  16 GB of VRAM, and every model card shows whether it fits the card it found.
 - **Pipelines, not dialogs.** Build a generation profile as a small node graph
   (image → background removal → model → clean-up → export) and reuse it. Model
   settings are generated from a registry, so adding a model is a few lines.
@@ -27,11 +27,19 @@ node-based pipeline with a live 3D viewer.
 
 ## Models
 
+The list spans 4 GB to 16 GB cards, smallest first. Each model card shows
+whether it fits the GPU the app found, so the larger entries are there for
+people running this on more than a 1080.
+
 | Model | Params | VRAM | License | Notes |
 |---|---|---|---|---|
-| [Hunyuan3D 2 mini](https://huggingface.co/tencent/Hunyuan3D-2mini) | 0.6B DiT | ~5 GB | Tencent Hunyuan Community | Best quality per gigabyte; turbo and standard variants |
 | [TripoSR](https://huggingface.co/stabilityai/TripoSR) | ~0.5B | ~4 GB | MIT | Seconds per mesh; great for previews |
+| [Hunyuan3D 2 mini](https://huggingface.co/tencent/Hunyuan3D-2mini) | 0.6B DiT | ~5 GB | Tencent Hunyuan Community | Best quality per gigabyte; turbo and standard variants |
+| [Hunyuan3D 2](https://huggingface.co/tencent/Hunyuan3D-2) | 1.1B | ~6 GB | Tencent Hunyuan Community | The model the mini was distilled from; cleaner surfaces |
 | [TripoSG](https://huggingface.co/VAST-AI/TripoSG) | 1.5B | ~7.5 GB | MIT | Near state-of-the-art geometry; tight on 8 GB cards |
+| [Hunyuan3D 2.1](https://huggingface.co/tencent/Hunyuan3D-2.1) | 3.3B | ~10 GB | Tencent Hunyuan 3D 2.1 Community | Sharpest geometry here; needs a 12 GB card |
+| [Step1X-3D Geometry](https://github.com/stepfun-ai/Step1X-3D) | 1.3B | ~10 GB | Apache-2.0 | The permissive option at this size; needs a 12 GB card |
+| [TRELLIS image-large](https://github.com/microsoft/TRELLIS) | 1.2B | ~16 GB | MIT | Sparse-voxel latents; the most detailed and the most VRAM-hungry here |
 | Mock | – | – | – | Procedural mesh, no download, no GPU; exercises the whole path |
 
 ## Quick start

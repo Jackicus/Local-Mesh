@@ -1,0 +1,34 @@
+# TRELLIS image-to-mesh dependencies (repo imported from
+# ~/.local-mesh/repos/TRELLIS via sys.path; cloned with --recurse-submodules so
+# the vendored FlexiCubes is present).
+#
+# A static walk of `import trellis` leaves exactly these module-level third-party
+# imports: PIL, easydict, numpy, open3d, plyfile, rembg, torch, torchvision,
+# tqdm, transformers, utils3d. `open3d` comes in only through the *text*-to-3D
+# pipeline's type annotations and is satisfied by ../shims/open3d rather than a
+# 400 MB wheel; `kaolin` (one shape-assertion helper inside FlexiCubes) is
+# satisfied by ../shims/kaolin. spconv and xformers are imported lazily inside
+# the sparse conv / attention modules and are real installs.
+#
+# Deliberately absent: nvdiffrast, xatlas, pyvista, pymeshfix, igraph (all only
+# reached through trellis.utils.postprocessing_utils, which the backend never
+# imports), diffoctreerast / diff_gaussian_rasterization (renderers, behind a
+# lazy __getattr__), flash-attn (no reliable wheel; ATTN_BACKEND=xformers).
+#
+# torch / torchvision are installed separately by the main process; the generated
+# ~/.local-mesh/constraints.txt pins them during this install so that resolving
+# xformers picks the build matching the torch already on disk instead of pulling
+# a different torch. xformers is therefore left UNPINNED on purpose — its
+# `torch==x.y.z` requirement plus that constraint does the version matching.
+xformers
+# Newest published spconv; there is no spconv-cu128/129/130 on PyPI, and the
+# cu126 build runs fine against newer CUDA runtimes (PTX-JIT on Blackwell).
+spconv-cu126==2.3.8
+easydict>=1.13
+plyfile>=1.0
+# rembg's inference session inside TrellisImageTo3DPipeline.preprocess_image
+onnxruntime>=1.17
+# Must be this commit: TRELLIS calls utils3d APIs that later releases renamed.
+utils3d @ git+https://github.com/EasternJournalist/utils3d.git@9a4eb15e4021b67b12c460c7057d642626897ec8
+# already in base.txt: numpy pillow tqdm rembg trimesh scipy
+transformers>=4.40

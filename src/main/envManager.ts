@@ -53,10 +53,25 @@ export interface ManifestRepo {
   url: string;
   dir: string;
   pipInstall: boolean;
+  /**
+   * Where the importable package sits inside the clone, when it is not the
+   * clone root. Hunyuan3D-2.1 keeps `hy3dshape` one level down, so the worker
+   * puts `<repos>/<dir>/<subdir>` on sys.path instead of `<repos>/<dir>`.
+   */
+  subdir?: string;
+  /** Clone with `--recurse-submodules` (TRELLIS vendors FlexiCubes that way). */
+  submodules?: boolean;
 }
 export interface ManifestModel {
   requirements: string | null;
   repos: ManifestRepo[];
+  /**
+   * Python snippets run as `<env>/bin/python -c "<snippet>"` after pip
+   * succeeds, in order. Used for anything a model needs on disk that is neither
+   * a Hugging Face snapshot nor a pip package — TRELLIS pre-seeds its DINOv2
+   * conditioner through torch.hub here. A failing snippet fails the install.
+   */
+  postInstall?: string[];
 }
 /** One torch build; the first variant whose conditions match the machine wins. */
 export interface TorchVariant {
@@ -80,7 +95,7 @@ export interface Manifest {
 
 // Mirrors resources/python/manifest.json; used when the file is absent (dev before the python side lands).
 const FALLBACK_MANIFEST: Manifest = {
-  version: '0.1.0',
+  version: '0.2.0',
   python: '3.11',
   torch: {
     variants: [
@@ -103,6 +118,32 @@ const FALLBACK_MANIFEST: Manifest = {
       requirements: 'requirements/triposg.txt',
       repos: [{ url: 'https://github.com/VAST-AI-Research/TripoSG.git', dir: 'TripoSG', pipInstall: false }],
     },
+    'hunyuan3d-2': {
+      requirements: 'requirements/hunyuan3d.txt',
+      repos: [{ url: 'https://github.com/Tencent-Hunyuan/Hunyuan3D-2.git', dir: 'Hunyuan3D-2', pipInstall: false }],
+    },
+    'hunyuan3d-2.1': {
+      requirements: 'requirements/hunyuan3d21.txt',
+      repos: [
+        {
+          url: 'https://github.com/Tencent-Hunyuan/Hunyuan3D-2.1.git',
+          dir: 'Hunyuan3D-2.1',
+          subdir: 'hy3dshape',
+          pipInstall: false,
+        },
+      ],
+    },
+    'step1x-3d': {
+      requirements: 'requirements/step1x3d.txt',
+      repos: [{ url: 'https://github.com/stepfun-ai/Step1X-3D.git', dir: 'Step1X-3D', pipInstall: false }],
+    },
+    trellis: {
+      requirements: 'requirements/trellis.txt',
+      repos: [{ url: 'https://github.com/microsoft/TRELLIS.git', dir: 'TRELLIS', submodules: true, pipInstall: false }],
+      postInstall: [
+        "import torch; torch.hub.load('facebookresearch/dinov2', 'dinov2_vitl14_reg', pretrained=True, trust_repo=True)",
+      ],
+    },
     mock: { requirements: null, repos: [] },
   },
 };
@@ -110,7 +151,7 @@ const FALLBACK_MANIFEST: Manifest = {
 const PROBE_TTL_MS = 60_000;
 const PROBE_SCRIPT = [
   'import json,sys',
-  'd={"python":sys.version.split()[0],"torch":None,"cuda":False,"gpu":None,"vram":None,"error":None}',
+  'd={"python":sys.version.split()[0],"torch":None,"torchvision":None,"cuda":False,"gpu":None,"vram":None,"error":None}',
   'try:',
   '  import torch',
   '  d["torch"]=torch.__version__',
@@ -120,12 +161,19 @@ const PROBE_SCRIPT = [
   '    d["vram"]=int(torch.cuda.get_device_properties(0).total_memory)',
   'except Exception as e:',
   '  d["error"]=str(e)',
+  // Separate try: a broken torchvision must not hide a working torch.
+  'try:',
+  '  import torchvision',
+  '  d["torchvision"]=torchvision.__version__',
+  'except Exception:',
+  '  pass',
   'print(json.dumps(d))',
 ].join('\n');
 
 interface ProbeResult {
   python: string;
   torch: string | null;
+  torchvision: string | null;
   cuda: boolean;
   gpu: string | null;
   vram: number | null;
@@ -244,6 +292,25 @@ async function probeEnv(): Promise<ProbeResult | null> {
     return result;
   })();
   return probeInFlight;
+}
+
+/**
+ * The torch build currently in the environment, as PEP 440 requirement
+ * specifiers. Local version segments are stripped on purpose: the installed
+ * wheel is `2.9.1+cu126`, which is not a version any index can resolve, while
+ * `torch==2.9.1` matches it (PEP 440: a specifier with no local segment matches
+ * any local version) *and* exists on PyPI for the resolver to check against.
+ *
+ * Returns an empty array when torch is not importable, which callers treat as
+ * "refuse to install model dependencies".
+ */
+export async function torchConstraintSpecifiers(): Promise<string[]> {
+  const probe = await probeEnv();
+  if (!probe?.torch) return [];
+  const base = (version: string): string => version.split('+')[0] ?? version;
+  const specifiers = [`torch==${base(probe.torch)}`];
+  if (probe.torchvision) specifiers.push(`torchvision==${base(probe.torchvision)}`);
+  return specifiers;
 }
 
 /** Background-removal model the worker asks rembg for (worker.py's default). */

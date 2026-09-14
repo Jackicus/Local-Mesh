@@ -209,12 +209,21 @@ def manifest() -> dict:
 
 
 def add_repo_paths(model_id: str) -> None:
-    """Put every `pipInstall: false` repo clone for this model on sys.path."""
+    """Put every `pipInstall: false` repo clone for this model on sys.path.
+
+    A repo whose importable package is not at the clone root carries a `subdir`
+    in the manifest (Hunyuan3D-2.1 keeps `hy3dshape` one level down, and
+    upstream's own README does `sys.path.insert(0, './hy3dshape')`); that
+    subdirectory goes on the path instead of the clone root.
+    """
     entry = (manifest().get("models") or {}).get(model_id) or {}
     for repo in entry.get("repos") or []:
         if repo.get("pipInstall"):
             continue  # installed into the venv with `pip install -e`
         path = os.path.join(REPOS_DIR, repo.get("dir", ""))
+        subdir = repo.get("subdir")
+        if subdir:
+            path = os.path.join(path, subdir)
         if not os.path.isdir(path):
             log("warn", f"repo clone missing: {path}")
             continue
