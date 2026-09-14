@@ -1,6 +1,6 @@
 # Local Mesh
 
-Desktop app for local image → 3D mesh generation. Electron + React 19 + Vite + TypeScript, plain CSS (cascade layers, OKLCH tokens); no component or state library — runtime deps are React, `lucide-react`, `three`, and `@fontsource` font files. Models run in Python from a uv-managed venv under `~/.local-mesh`; target hardware is an 8 GB Pascal card (GTX 1080: no bf16, slow fp16, torch 2.9.1+cu126).
+Desktop app for local image → 3D mesh generation. Electron + React 19 + Vite + TypeScript, plain CSS (cascade layers, OKLCH tokens); no component or state library — runtime deps are React, `lucide-react`, `three`, and `@fontsource` font files. Models run in Python from a uv-managed venv under `~/.local-mesh`; reference hardware is an 8 GB Pascal card (GTX 1080: no bf16, slow fp16), but setup picks the torch build per GPU compute capability (see `manifest.json` `torch.variants`), so newer cards through RTX 50xx and CPU-only machines work too.
 
 ## Run
 

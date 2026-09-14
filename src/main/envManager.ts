@@ -15,6 +15,40 @@ import type { ChildProcess } from 'node:child_process';
  * bundled with the app (getPaths().scripts) and never installed.
  */
 
+interface DetectedGpu {
+  name: string;
+  computeCap: number;
+}
+
+/** nvidia-smi is the only thing that answers before torch exists; absent = no NVIDIA GPU. */
+async function detectGpu(): Promise<DetectedGpu | null> {
+  try {
+    const r = await runCapture('nvidia-smi', ['--query-gpu=compute_cap,name', '--format=csv,noheader'], { timeoutMs: 8000 });
+    const line = r.stdout.trim().split('\n')[0] ?? '';
+    const [cap, ...rest] = line.split(',');
+    const computeCap = Number.parseFloat((cap ?? '').trim());
+    if (!Number.isFinite(computeCap)) return null;
+    return { name: rest.join(',').trim() || 'NVIDIA GPU', computeCap };
+  } catch {
+    return null;
+  }
+}
+
+export function pickTorchVariant(variants: TorchVariant[], gpu: DetectedGpu | null): TorchVariant {
+  for (const v of variants) {
+    if (v.noGpu) {
+      if (!gpu) return v;
+      continue;
+    }
+    if (v.maxComputeCap !== undefined) {
+      if (gpu && gpu.computeCap <= v.maxComputeCap) return v;
+      continue;
+    }
+    if (gpu) return v;
+  }
+  return variants[variants.length - 1]!;
+}
+
 export interface ManifestRepo {
   url: string;
   dir: string;
@@ -24,10 +58,22 @@ export interface ManifestModel {
   requirements: string | null;
   repos: ManifestRepo[];
 }
+/** One torch build; the first variant whose conditions match the machine wins. */
+export interface TorchVariant {
+  name: string;
+  /** Only when the GPU's compute capability is at or below this (e.g. 6.9 = pre-Volta). */
+  maxComputeCap?: number;
+  /** Only when no NVIDIA GPU is detected. */
+  noGpu?: boolean;
+  packages: string[];
+  /** null = PyPI default (bundles the current CUDA; supports the newest GPUs). */
+  indexUrl: string | null;
+}
+
 export interface Manifest {
   version: string;
   python: string;
-  torch: { packages: string[]; indexUrl: string };
+  torch: { variants: TorchVariant[] };
   baseRequirements: string;
   models: Record<string, ManifestModel>;
 }
@@ -36,7 +82,13 @@ export interface Manifest {
 const FALLBACK_MANIFEST: Manifest = {
   version: '0.1.0',
   python: '3.11',
-  torch: { packages: ['torch==2.9.1', 'torchvision'], indexUrl: 'https://download.pytorch.org/whl/cu126' },
+  torch: {
+    variants: [
+      { name: 'pre-volta-cu126', maxComputeCap: 6.9, packages: ['torch==2.9.1', 'torchvision'], indexUrl: 'https://download.pytorch.org/whl/cu126' },
+      { name: 'cpu', noGpu: true, packages: ['torch', 'torchvision'], indexUrl: 'https://download.pytorch.org/whl/cpu' },
+      { name: 'cuda-current', packages: ['torch', 'torchvision'], indexUrl: null },
+    ],
+  },
   baseRequirements: 'requirements/base.txt',
   models: {
     'hunyuan3d-2mini': {
@@ -318,8 +370,14 @@ export async function setupEnv(): Promise<void> {
       ]);
     }
 
-    await runStep(run, 'installing-torch', [8, 70], 'Installing PyTorch', uv, [
-      'pip', 'install', '--python', python, ...manifest.torch.packages, '--index-url', manifest.torch.indexUrl,
+    const gpu = await detectGpu();
+    const variant = pickTorchVariant(manifest.torch.variants, gpu);
+    elog.info(
+      `torch variant "${variant.name}" for ${gpu ? `${gpu.name} (compute ${gpu.computeCap})` : 'no NVIDIA GPU'}`
+    );
+    await runStep(run, 'installing-torch', [8, 70], `Installing PyTorch (${variant.name})`, uv, [
+      'pip', 'install', '--python', python, ...variant.packages,
+      ...(variant.indexUrl ? ['--index-url', variant.indexUrl] : []),
     ]);
     await runStep(run, 'installing-base', [70, 94], 'Installing worker dependencies', uv, [
       'pip', 'install', '--python', python, '-r', path.join(bundled, manifest.baseRequirements),

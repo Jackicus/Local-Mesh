@@ -37,8 +37,11 @@ The registry lives in `src/core/models.ts`; each model has a backend in
 - Node 20+, npm
 - [`uv`](https://docs.astral.sh/uv/) on PATH (`curl -LsSf https://astral.sh/uv/install.sh | sh`)
 - `git` (some backends are installed from their GitHub repos)
-- An NVIDIA GPU with a recent driver. Pascal cards (GTX 10xx) are supported via
-  the CUDA 12.6 torch wheels; newer wheels dropped them.
+- An NVIDIA GPU with a recent driver, 8 GB VRAM or more recommended. Setup
+  picks the torch build for the card from its compute capability: pre-Volta
+  cards (GTX 10xx and older) get the last CUDA 12.6 build, everything newer
+  through the RTX 50 series gets current PyPI torch, and machines without an
+  NVIDIA GPU get the CPU build (slow, but the mock and TripoSR still work).
 
 ## Getting started
 
@@ -64,7 +67,7 @@ to check the whole queue → worker → viewer path first.
 Everything user-specific lives in `~/.local-mesh`:
 
 ```text
-env/          uv-managed Python 3.11 venv (torch 2.9.1+cu126)
+env/          uv-managed Python 3.11 venv (torch build chosen per GPU)
 repos/        git checkouts some backends need
 models/<id>/  Hugging Face snapshots
 inputs/       per-job copies of source images
