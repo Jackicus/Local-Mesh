@@ -25,13 +25,17 @@ Environment setup, once:
 
 ```sh
 uv venv ~/.local-mesh/env --python 3.11
+# torch: the app picks a variant from manifest.json `torch.variants` by compute
+# capability (nvidia-smi). Pre-Volta cards get the cu126 pin below; newer GPUs
+# (Volta through RTX 50xx) get current PyPI torch; no NVIDIA GPU -> the cpu index.
 uv pip install --python ~/.local-mesh/env/bin/python torch==2.9.1 torchvision \
-    --index-url https://download.pytorch.org/whl/cu126
+    --index-url https://download.pytorch.org/whl/cu126      # pre-Volta only
 uv pip install --python ~/.local-mesh/env/bin/python -r <app>/resources/python/requirements/base.txt
 ```
 
-The cu126 pin is not cosmetic: it is the last PyTorch wheel channel that still
-compiles `sm_61`, the target GTX 1080. Newer channels (cu128+) dropped Pascal.
+The cu126 pin is not cosmetic for old cards: it is the last PyTorch wheel channel
+that still compiles `sm_61` (GTX 10xx). It has no Blackwell kernels, which is why
+newer cards install from PyPI instead.
 
 Per model:
 
