@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ModelDefinition } from '../../../core/types';
 import { MODELS } from '../../../core/models';
-import { Badge, Button, toast } from '../../components';
-import { CheckCircleIcon, FolderOpenIcon, HardDriveIcon, PackageIcon } from '../../assets/icons';
+import { Button, toast } from '../../components';
+import { CheckCircleIcon, FolderOpenIcon, HardDriveIcon } from '../../assets/icons';
 import { dockStore } from '../../stores/dockStore';
 import { useEnvStore } from '../../stores/envStore';
 import { useModelStore } from '../../stores/modelStore';
@@ -28,6 +28,8 @@ export const ModelsView: React.FC = () => {
   const engineRef = useRef<HTMLDivElement>(null);
   const pulseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [pulse, setPulse] = useState(false);
+  /** Set when something sent the user at the engine card, so it opens on arrival. */
+  const [engineOpen, setEngineOpen] = useState(false);
 
   // Re-probe on every visit: uv may have been installed, or weights changed on
   // disk, since the stores bound at startup.
@@ -42,7 +44,9 @@ export const ModelsView: React.FC = () => {
 
   /** Every "you have to do X first" note in this view points back at one card. */
   const focusEngine = useCallback(() => {
-    engineRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setEngineOpen(true);
+    // Let the disclosure mount before scrolling to where it will be.
+    requestAnimationFrame(() => engineRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
     setPulse(true);
     if (pulseTimer.current) clearTimeout(pulseTimer.current);
     pulseTimer.current = setTimeout(() => setPulse(false), 1800);
@@ -50,6 +54,8 @@ export const ModelsView: React.FC = () => {
 
   const envReady = env.status?.ready ?? false;
   const envBusy = env.settingUp || Boolean(env.status && SETUP_PHASES.includes(env.status.phase));
+  const uvMissing = env.status ? !env.status.uvAvailable : false;
+  const needsRepair = Boolean(env.status?.envExists && !env.status.ready);
   const busy =
     gen.activeJobId !== null || gen.worker === 'loading' || gen.worker === 'generating' || gen.worker === 'unloading';
   const vramTotalBytes = env.status?.vramTotalBytes ?? gen.memory.vramTotalBytes;
@@ -66,19 +72,21 @@ export const ModelsView: React.FC = () => {
           download: models.downloads[model.id],
           envReady,
           envBusy,
+          envProgress: env.progress,
+          uvMissing,
+          chain: models.chain,
           vramTotalBytes,
         })
       );
     }
     return map;
-  }, [models.installs, models.downloads, envReady, envBusy, vramTotalBytes]);
+  }, [models.installs, models.downloads, models.chain, envReady, envBusy, env.progress, uvMissing, vramTotalBytes]);
 
   const handlerCache = useRef(new Map<string, ModelHandlers>());
   const makeHandlers = useCallback(
     (model: ModelDefinition): ModelHandlers => ({
-      onDownload: () => void modelActions.download(model.id),
-      onInstallDeps: () => void modelActions.installDeps(model.id),
-      onCancel: () => void modelActions.cancelDownload(model.id),
+      onInstall: () => void modelActions.install(model.id),
+      onCancel: () => void modelActions.cancelInstall(model.id),
       onDelete: () => {
         void modelActions
           .remove(model.id)
@@ -115,22 +123,23 @@ export const ModelsView: React.FC = () => {
   const demo = MODELS.filter(isDemo);
   const readyCount = real.filter((m) => states.get(m.id)?.ready).length;
 
-  // The one to try first: whatever is already on its way, else the model the
-  // registry recommends when it fits this card, else the smallest one that
-  // does (the registry is ordered by graphics memory, ascending).
-  const candidates = real.filter((m) => states.get(m.id)?.fit?.verdict !== 'over');
+  // The one to try first. The registry's `recommended` tag wins whenever that
+  // model fits this card, because it is also the model wearing the badge in the
+  // list below — picking anything else here makes the page disagree with
+  // itself. Only when the recommendation will not fit do we fall back to the
+  // smallest thing that will (the registry is ordered by VRAM, ascending).
+  const fits = real.filter((m) => states.get(m.id)?.fit?.verdict !== 'over');
   const pick =
-    candidates.find((m) => states.get(m.id)?.running) ??
-    candidates.find((m) => (models.installs[m.id]?.weights ?? 'none') !== 'none') ??
-    candidates.find((m) => m.tags.includes('recommended')) ??
-    candidates[0] ??
+    fits.find((m) => states.get(m.id)?.running) ??
+    fits.find((m) => m.tags.includes('recommended')) ??
+    fits.find((m) => (models.installs[m.id]?.weights ?? 'none') !== 'none') ??
+    fits[0] ??
     real[0];
   const featured = readyCount === 0 ? pick : undefined;
 
   const rest = real.filter((m) => m.id !== featured?.id);
   const installed = rest.filter((m) => states.get(m.id)?.ready);
-  const available = rest.filter((m) => !states.get(m.id)?.ready && states.get(m.id)?.fit?.verdict !== 'over');
-  const tooBig = rest.filter((m) => !states.get(m.id)?.ready && states.get(m.id)?.fit?.verdict === 'over');
+  const others = rest.filter((m) => !states.get(m.id)?.ready);
 
   const row = (model: ModelDefinition) => {
     const state = states.get(model.id);
@@ -148,17 +157,24 @@ export const ModelsView: React.FC = () => {
     );
   };
 
+  // The engine is an implementation detail right up until it is broken. It sits
+  // on the surface only when it wants something from the user; otherwise it is
+  // one line at the bottom of the page with everything else they will not need.
+  // ...or until something explicitly sent the user here to look at it.
+  const engineNeedsAttention = uvMissing || needsRepair || Boolean(env.status?.lastError) || engineOpen;
+
+  const engineCard = (
+    <div ref={engineRef} className={`models-anchor ${pulse ? 'is-pulsing' : ''}`}>
+      <EnvironmentCard />
+    </div>
+  );
+
   return (
     <div className="view-container models-view">
       <header className="view-header">
-        <Badge variant="accent" icon={<PackageIcon size={14} />}>
-          {readyCount} of {real.length} ready
-        </Badge>
         <h1 className="view-title">Models</h1>
         <p className="view-description">
-          Each model turns a picture into a 3D shape, and each one has to be installed before it can run. Everything
-          lands in <code className="models-inline-code">{env.paths?.root ?? '~/.local-mesh'}</code> and nothing is
-          installed elsewhere on your computer.
+          A model is the thing that turns your picture into a 3D shape. Install one and you are ready to go.
         </p>
       </header>
 
@@ -174,9 +190,7 @@ export const ModelsView: React.FC = () => {
         </p>
       )}
 
-      <div ref={engineRef} className={`models-anchor ${pulse ? 'is-pulsing' : ''}`}>
-        <EnvironmentCard />
-      </div>
+      {engineNeedsAttention && engineCard}
 
       {featured && states.get(featured.id) && (
         <FeaturedModel
@@ -196,46 +210,36 @@ export const ModelsView: React.FC = () => {
         </section>
       )}
 
-      {available.length > 0 && (
-        <section className="models-group">
-          <h2 className="models-group-title">Other models</h2>
-          <p className="models-group-note">
-            {vramTotalBytes == null
-              ? 'Set the engine up and Local Mesh will tell you which of these your graphics card can handle.'
-              : 'Ordered by how much graphics memory they need, smallest first.'}
-          </p>
-          <ul className="models-list">{available.map(row)}</ul>
-        </section>
-      )}
-
-      {tooBig.length > 0 && (
+      {/* Everything that is not the recommendation folds away. Someone choosing
+          their first model should be choosing between one option and "later". */}
+      {others.length > 0 && (
         <Disclosure
-          summary={`${tooBig.length} ${tooBig.length === 1 ? 'model needs' : 'models need'} a bigger graphics card`}
+          summary="Other models"
+          meta={`${others.length}`}
           className="models-group-hidden"
+          defaultOpen={readyCount > 0 && !featured}
         >
           <p className="models-group-note">
-            These ask for more graphics memory than your card has. You can still install them — expect them to run out
-            of memory part-way through a mesh.
+            You do not need these to get started — the one above is enough. They trade download size and graphics
+            memory for sharper shapes, and some will not fit your card.
           </p>
-          <ul className="models-list">{tooBig.map(row)}</ul>
+          <ul className="models-list">{others.map(row)}</ul>
         </Disclosure>
       )}
 
-      {demo.length > 0 && (
-        <section className="models-group">
-          <h2 className="models-group-title">Try it without downloading</h2>
-          <p className="models-group-note">
-            A pretend model that needs no download and no graphics card. Use it to check Local Mesh works end to end.
-          </p>
-          <ul className="models-list">{demo.map(row)}</ul>
-        </section>
-      )}
+      <Disclosure summary="Advanced" meta="you can ignore all of this" className="models-group-hidden">
+        <p className="models-group-note">
+          For anyone who wants to look underneath: the shared Python setup every model runs on, and a pretend model
+          that makes a shape instantly so you can check Local Mesh works end to end.
+        </p>
+        {!engineNeedsAttention && engineCard}
+        {demo.length > 0 && <ul className="models-list">{demo.map(row)}</ul>}
+      </Disclosure>
 
       <footer className="models-storage">
         <HardDriveIcon size={14} />
         <span className="models-storage-value">
-          Model files are using <strong>{formatBytes(totalBytes)}</strong> in{' '}
-          <code className="models-inline-code">{env.paths?.models ?? '~/.local-mesh/models'}</code>
+          Model files are using <strong>{formatBytes(totalBytes)}</strong>
         </span>
         {env.paths && (
           <Button

@@ -3,7 +3,6 @@ import type { ModelDefinition, ModelInstallState } from '../../../core/types';
 import { Badge, Card } from '../../components';
 import { SparklesIcon } from '../../assets/icons';
 import { blurb } from './copy';
-import { InstallTrack } from './InstallTrack';
 import { BlockedNote, ModelUtilities, PrimaryAction, type ModelHandlers } from './ModelActions';
 import type { ModelState } from './modelState';
 import { TransferLine } from './TransferLine';
@@ -49,7 +48,7 @@ export const FeaturedModel: React.FC<FeaturedModelProps> = ({
           <SparklesIcon size={20} />
         </span>
         <div>
-          <p className="models-eyebrow">Start here</p>
+          <p className="models-eyebrow">Recommended for you</p>
           <h3 className="ui-card-title">{model.name}</h3>
         </div>
       </div>
@@ -61,30 +60,33 @@ export const FeaturedModel: React.FC<FeaturedModelProps> = ({
     <Card.Body>
       <p className="models-featured-blurb">{blurb(model)}</p>
 
+      {/* Two numbers, not four: what it costs to fetch, and whether it will run
+          here at all. Everything else about the model is in the list below. */}
       <div className="models-facts">
         <Fact
           label="Download"
-          value={model.diskGb > 0 ? `${model.diskGb} GB` : 'None'}
-          hint="Model files, fetched straight from Hugging Face."
-        />
-        <Fact
-          label="Graphics memory"
-          value={model.vramGb > 0 ? `~${model.vramGb} GB` : 'None'}
-          hint="Roughly what it needs on the graphics card while it runs."
+          value={model.diskGb > 0 ? `${model.diskGb} GB` : 'Nothing to download'}
+          hint={`The model files, plus a one-time setup shared by every model.`}
         />
         {state.fit && (
           <Fact label="Your card" value={state.fit.label} hint={state.fit.detail} tone={`is-${state.fit.verdict}`} />
         )}
       </div>
 
-      <InstallTrack steps={state.steps} />
-
-      {state.progress && <TransferLine progress={state.progress} />}
+      {state.live && <TransferLine live={state.live} />}
       {state.blocked && !state.running && <BlockedNote reason={state.blocked} onFix={handlers.onFixEngine} />}
     </Card.Body>
 
     <Card.Footer>
-      <ModelUtilities model={model} install={install} state={state} loaded={loaded} busy={busy} handlers={handlers} />
+      <ModelUtilities
+        model={model}
+        install={install}
+        state={state}
+        loaded={loaded}
+        busy={busy}
+        handlers={handlers}
+        minimal
+      />
       <PrimaryAction state={state} handlers={handlers} size="md" />
     </Card.Footer>
   </Card>

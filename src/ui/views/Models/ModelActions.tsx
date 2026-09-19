@@ -7,8 +7,8 @@ import {
   DownloadIcon,
   ExternalLinkIcon,
   FolderOpenIcon,
-  PackageIcon,
   PlayIcon,
+  RefreshIcon,
   StopIcon,
   TrashIcon,
   WrenchIcon,
@@ -17,19 +17,19 @@ import { formatBytes } from './formatBytes';
 import type { ActionKind, ModelState } from './modelState';
 
 export interface ModelHandlers {
-  onDownload: () => void;
-  onInstallDeps: () => void;
+  /** Runs every outstanding leg — engine, weights, packages — as one action. */
+  onInstall: () => void;
   onCancel: () => void;
   onDelete: () => void;
   onLoad: () => void;
   onUnload: () => void;
-  /** Take the user to the engine card — the fix for every "blocked" state here. */
+  /** Show the one prerequisite the app cannot install for you. */
   onFixEngine: () => void;
 }
 
 const ACTION_ICON = {
-  download: <DownloadIcon size={14} />,
-  extras: <PackageIcon size={14} />,
+  install: <DownloadIcon size={14} />,
+  retry: <RefreshIcon size={14} />,
   cancel: <CancelIcon size={14} />,
 };
 
@@ -59,12 +59,7 @@ export const PrimaryAction: React.FC<{
   }, [pending, kind]);
 
   if (!action) return null;
-  const run =
-    action.kind === 'cancel'
-      ? handlers.onCancel
-      : action.kind === 'extras'
-        ? handlers.onInstallDeps
-        : handlers.onDownload;
+  const run = action.kind === 'cancel' ? handlers.onCancel : handlers.onInstall;
   return (
     <Button
       size={size}
@@ -82,14 +77,16 @@ export const PrimaryAction: React.FC<{
   );
 };
 
-/** Why nothing can happen yet, and the way out of it. */
-export const BlockedNote: React.FC<{ reason: string; onFix: () => void }> = ({ reason, onFix }) => (
+/** Why nothing can happen yet, and the way out of it when there is one. */
+export const BlockedNote: React.FC<{ reason: string; onFix?: () => void }> = ({ reason, onFix }) => (
   <p className="models-blocked">
     <WrenchIcon size={14} />
     <span>{reason}</span>
-    <button type="button" className="models-link" onClick={onFix}>
-      Set it up
-    </button>
+    {onFix && (
+      <button type="button" className="models-link" onClick={onFix}>
+        Show me how
+      </button>
+    )}
   </p>
 );
 
@@ -124,7 +121,10 @@ export const ModelUtilities: React.FC<{
   loaded: boolean;
   busy: boolean;
   handlers: ModelHandlers;
-}> = ({ model, install, state, loaded, busy, handlers }) => {
+  /** Drop the destructive and expert bits — for the promoted card, where the
+      only sensible next move is Install and a red button beside it is a trap. */
+  minimal?: boolean;
+}> = ({ model, install, state, loaded, busy, handlers, minimal = false }) => {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const hasFiles = (install?.weights ?? 'none') !== 'none';
 
@@ -144,7 +144,7 @@ export const ModelUtilities: React.FC<{
           onClick={() => window.electronAPI?.openPath(install.dir)}
         />
       )}
-      {hasFiles && !state.running && (
+      {hasFiles && !state.running && !minimal && (
         <IconAction
           label={loaded ? 'Unload it before deleting' : `Delete the files (${formatBytes(install?.sizeBytes)})`}
           icon={<TrashIcon size={15} />}
@@ -154,6 +154,7 @@ export const ModelUtilities: React.FC<{
         />
       )}
       {state.ready &&
+        !minimal &&
         (loaded ? (
           <Tooltip content="Frees the graphics memory it is holding">
             <Button size="sm" variant="secondary" icon={<StopIcon size={14} />} disabled={busy} onClick={handlers.onUnload}>

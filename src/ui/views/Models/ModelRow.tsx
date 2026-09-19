@@ -3,8 +3,9 @@ import type { ModelDefinition, ModelInstallState } from '../../../core/types';
 import { Badge } from '../../components';
 import { ChevronRightIcon, MemoryIcon } from '../../assets/icons';
 import { blurb, tagLabels } from './copy';
+import { Disclosure } from './Disclosure';
 import { formatBytes } from './formatBytes';
-import { InstallTrack, TrackMini } from './InstallTrack';
+import { InstallTrack } from './InstallTrack';
 import { BlockedNote, ModelUtilities, PrimaryAction, type ModelHandlers } from './ModelActions';
 import type { ModelState } from './modelState';
 import { TransferLine } from './TransferLine';
@@ -29,14 +30,15 @@ export const ModelRow: React.FC<ModelRowProps> = ({ model, install, state, loade
   const tags = tagLabels(model);
   const sizeOnDisk = install && install.sizeBytes > 0 ? formatBytes(install.sizeBytes) : null;
 
-  // What it costs, in the two units that matter: disk and graphics memory.
+  // One cost, not three. Whether it runs on this card is the only other thing
+  // worth saying before you have decided to install it; the graphics-memory
+  // figure behind that verdict lives in the details panel.
   const facts = [
     state.ready && sizeOnDisk
       ? `${sizeOnDisk} on disk`
       : model.diskGb > 0
         ? `${model.diskGb} GB download`
         : 'nothing to download',
-    model.vramGb > 0 ? `~${model.vramGb} GB graphics memory` : 'no graphics card needed',
   ];
   const verdict = state.fit && state.fit.verdict !== 'unknown' ? state.fit : null;
 
@@ -79,7 +81,6 @@ export const ModelRow: React.FC<ModelRowProps> = ({ model, install, state, loade
 
         <div className="models-row-side">
           <span className="models-row-status">
-            {!state.ready && <TrackMini steps={state.steps} />}
             <Badge variant={state.status.variant} className="models-pill">
               {state.status.label}
             </Badge>
@@ -88,14 +89,19 @@ export const ModelRow: React.FC<ModelRowProps> = ({ model, install, state, loade
         </div>
       </div>
 
-      {state.progress && <TransferLine progress={state.progress} />}
+      {state.live && <TransferLine live={state.live} />}
       {state.blocked && !state.running && <BlockedNote reason={state.blocked} onFix={handlers.onFixEngine} />}
 
       {open && (
         <div className="models-row-detail">
-          {!state.ready && <InstallTrack steps={state.steps} />}
           <p className="models-row-expert">{model.description}</p>
           <div className="models-detail-grid">
+            <div className="models-detail">
+              <span className="models-detail-label">Graphics memory</span>
+              <span className="models-detail-value" title={state.fit?.detail}>
+                {model.vramGb > 0 ? `about ${model.vramGb} GB` : 'none needed'}
+              </span>
+            </div>
             <div className="models-detail">
               <span className="models-detail-label">Made by</span>
               <span className="models-detail-value">{model.vendor}</span>
@@ -129,6 +135,11 @@ export const ModelRow: React.FC<ModelRowProps> = ({ model, install, state, loade
               </div>
             )}
           </div>
+          {!state.ready && (
+            <Disclosure summary="What installing does" className="models-row-track">
+              <InstallTrack steps={state.steps} />
+            </Disclosure>
+          )}
           <div className="models-row-tools">
             <ModelUtilities
               model={model}

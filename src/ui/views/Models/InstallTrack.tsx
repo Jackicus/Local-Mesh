@@ -9,16 +9,11 @@ function node(step: InstallStep, index: number): React.ReactNode {
   return index + 1;
 }
 
-/** "Python engine: installed. Model files: 2.1 GB to download." */
-export function trackSummary(steps: InstallStep[]): string {
-  return steps.map((s) => `${s.label}: ${s.state.toLowerCase()}`).join('. ');
-}
-
 /**
  * The three things that have to be true before a model runs, drawn as the
- * sequence they actually are: a spine that fills as far as you have got. This
- * is the one place the view raises its voice, because "which of the three is
- * missing" is the question every new user is really asking.
+ * sequence they actually are. Install does all three on its own, so this is no
+ * longer anybody's next step — it lives behind a disclosure, for the one user
+ * in fifty who wants to know what the button is actually doing.
  */
 export const InstallTrack: React.FC<{ steps: InstallStep[] }> = ({ steps }) => (
   <ol className="models-track">
@@ -34,15 +29,3 @@ export const InstallTrack: React.FC<{ steps: InstallStep[] }> = ({ steps }) => (
     ))}
   </ol>
 );
-
-/** The same information compressed to three marks, for a collapsed row. */
-export const TrackMini: React.FC<{ steps: InstallStep[] }> = ({ steps }) => {
-  const summary = trackSummary(steps);
-  return (
-    <span className="models-mini" role="img" aria-label={summary} title={summary}>
-      {steps.map((step) => (
-        <span key={step.key} className={`models-mini-seg is-${step.status}`} />
-      ))}
-    </span>
-  );
-};

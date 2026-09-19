@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import type { ModelDownloadProgress } from '../../../core/types';
+import type { LiveInstall } from './modelState';
 import { ProgressBar } from './ProgressBar';
 import { formatBytes, formatEta, formatRate } from './formatBytes';
 
@@ -9,7 +10,7 @@ import { formatBytes, formatEta, formatRate } from './formatBytes';
  * Hugging Face download swings between 2 and 40 MB/s and a number that jumps
  * every frame reads as broken rather than fast.
  */
-function useTransferRate(progress: ModelDownloadProgress | null): number | null {
+function useTransferRate(progress: ModelDownloadProgress | null | undefined): number | null {
   const sample = useRef<{ bytes: number; at: number } | null>(null);
   const [rate, setRate] = useState<number | null>(null);
 
@@ -41,48 +42,47 @@ function useTransferRate(progress: ModelDownloadProgress | null): number | null 
 }
 
 interface TransferLineProps {
-  progress: ModelDownloadProgress;
+  live: LiveInstall;
 }
 
-/** The live line for whichever step is running: a bar and one plain sentence. */
-export const TransferLine: React.FC<TransferLineProps> = ({ progress }) => {
-  const rate = useTransferRate(progress);
-  const failed = progress.status === 'failed';
-  const starting = progress.status === 'starting';
+/**
+ * The live line for the whole install, whichever leg is running: one bar, one
+ * plain sentence, and the noisy per-file detail underneath. The legs share this
+ * one component so a chained install reads as a single run rather than three
+ * separate ones that each start over at zero.
+ */
+export const TransferLine: React.FC<TransferLineProps> = ({ live }) => {
+  const rate = useTransferRate(live.transfer);
+  const { failed, indeterminate, transfer } = live;
 
-  let headline: string;
-  if (failed) {
-    headline = progress.error ?? 'The last attempt failed.';
-  } else if (starting) {
-    headline = 'Starting…';
-  } else if (progress.kind === 'weights') {
-    const parts = [
-      progress.totalBytes > 0
-        ? `${formatBytes(progress.downloadedBytes)} of ${formatBytes(progress.totalBytes)}`
-        : `${formatBytes(progress.downloadedBytes)} downloaded`,
-      formatRate(rate),
-      rate && progress.totalBytes > progress.downloadedBytes
-        ? formatEta((progress.totalBytes - progress.downloadedBytes) / rate)
-        : null,
-    ];
-    headline = parts.filter(Boolean).join(' · ');
-  } else {
-    headline = 'Installing packages…';
-  }
-
-  // The per-file / per-package line: useful, but never the thing you read first.
-  const detail = !failed && !starting && progress.message ? progress.message : null;
+  // A weights download can say something better than a percentage: how much of
+  // it has landed, how fast, and how long is left.
+  const measured =
+    transfer && !failed && !indeterminate
+      ? [
+          transfer.totalBytes > 0
+            ? `${formatBytes(transfer.downloadedBytes)} of ${formatBytes(transfer.totalBytes)}`
+            : `${formatBytes(transfer.downloadedBytes)} downloaded`,
+          formatRate(rate),
+          rate && transfer.totalBytes > transfer.downloadedBytes
+            ? formatEta((transfer.totalBytes - transfer.downloadedBytes) / rate)
+            : null,
+        ]
+          .filter(Boolean)
+          .join(' · ')
+      : null;
 
   return (
     <div className={`models-transfer ${failed ? 'is-failed' : ''}`}>
       <div className="models-transfer-bar">
-        <ProgressBar pct={progress.pct} indeterminate={starting} tone={failed ? 'danger' : 'accent'} />
-        {!starting && <span className="models-transfer-pct">{Math.round(progress.pct)}%</span>}
+        <ProgressBar pct={live.pct} indeterminate={indeterminate} tone={failed ? 'danger' : 'accent'} />
+        {!indeterminate && <span className="models-transfer-pct">{Math.round(live.pct)}%</span>}
       </div>
-      <p className="models-transfer-headline">{headline}</p>
-      {detail && (
-        <p className="models-transfer-detail" title={detail}>
-          {detail}
+      <p className="models-transfer-headline">{live.label}</p>
+      {measured && <p className="models-transfer-measure">{measured}</p>}
+      {live.detail && (
+        <p className="models-transfer-detail" title={live.detail}>
+          {live.detail}
         </p>
       )}
     </div>

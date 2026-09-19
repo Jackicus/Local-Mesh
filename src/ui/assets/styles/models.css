@@ -435,43 +435,6 @@
     display: none;
   }
 
-  /* The same three states, compressed for a collapsed row */
-  .models-mini {
-    display: inline-flex;
-    align-items: center;
-    gap: 3px;
-  }
-
-  .models-mini-seg {
-    width: 14px;
-    height: 4px;
-    border-radius: 2px;
-    background-color: var(--border-strong);
-  }
-
-  .models-mini-seg.is-done {
-    background-color: var(--accent);
-  }
-
-  .models-mini-seg.is-running {
-    background-color: var(--accent);
-    animation: models-blink 1.2s ease-in-out infinite;
-  }
-
-  .models-mini-seg.is-blocked {
-    background-color: var(--warning);
-  }
-
-  .models-mini-seg.is-failed {
-    background-color: var(--danger);
-  }
-
-  @keyframes models-blink {
-    50% {
-      opacity: 0.35;
-    }
-  }
-
   /* --------------------------------------------------------------------------
      Groups & the model list — one shelf, hairline-separated rows
      -------------------------------------------------------------------------- */
@@ -660,6 +623,11 @@
     max-width: 76ch;
   }
 
+  /* "What installing does" — plumbing, one more click down than the details */
+  .models-row-track {
+    margin-block-start: var(--space-3);
+  }
+
   .models-row-tools:empty {
     display: none;
   }
@@ -801,6 +769,13 @@
     color: var(--danger);
   }
 
+  /* Bytes, rate and ETA — the line worth reading while a download runs */
+  .models-transfer-measure {
+    font-size: 0.786rem;
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+  }
+
   .models-transfer-detail {
     font-family: var(--font-mono);
     font-size: 0.714rem;
@@ -932,7 +907,6 @@
     }
 
     .models-spin,
-    .models-mini-seg.is-running,
     .models-anchor.is-pulsing {
       animation: none;
     }
