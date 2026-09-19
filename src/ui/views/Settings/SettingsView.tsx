@@ -17,6 +17,7 @@ import {
   SunIcon,
   SystemIcon,
   UnplugIcon,
+  WorkflowIcon,
 } from '../../assets/icons';
 import { Disclosure } from '../Models/Disclosure';
 import { useTheme, AVAILABLE_ACCENTS } from '../../stores/themeStore';
@@ -50,7 +51,7 @@ const ADVANCED_PATHS: Array<{ key: keyof LocalMeshPaths; label: string; fallback
  */
 export const SettingsView: React.FC = () => {
   const [themeState, themeActions] = useTheme();
-  const [, dock] = useDockStore();
+  const [dockState, dock] = useDockStore();
   const [env] = useEnvStore();
   const [{ settings }, settingsActions] = useSettingsStore();
   const [gen, genActions] = useGenerationStore();
@@ -164,6 +165,19 @@ export const SettingsView: React.FC = () => {
             and work on their own — come in here only if a model runs out of memory, or you want to trade speed
             for memory on purpose.
           </p>
+
+          <Card title="Tools" subtitle="Extra screens, hidden until you want them" icon={<WorkflowIcon size={20} />}>
+            <Form.Row
+              label="Show the pipeline editor"
+              description="Adds Pipelines to the sidebar: a node graph for changing how a mesh is made, step by step. It appears on its own once you have generated something."
+            >
+              <Form.Toggle
+                checked={dockState.advanced}
+                onChange={(v) => dock.setAdvanced(v)}
+                aria-label="Show the pipeline editor"
+              />
+            </Form.Row>
+          </Card>
 
           <Card
             title="Model lifecycle"

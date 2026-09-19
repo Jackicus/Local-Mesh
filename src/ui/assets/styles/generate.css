@@ -185,6 +185,48 @@
     color: var(--text-muted);
   }
 
+  /* Fast / Balanced / Detailed, in the panel that says what will run */
+  .gen-quality-row {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gen-s2);
+  }
+
+  .gen-quality {
+    display: flex;
+    gap: 2px;
+    padding: 2px;
+    border-radius: var(--radius-sm);
+    background-color: var(--gen-inset-bg);
+    border: 1px solid var(--border-subtle);
+  }
+
+  .gen-quality-btn {
+    flex: 1;
+    padding: 4px 8px;
+    border-radius: calc(var(--radius-sm) - 2px);
+    font-size: 0.786rem;
+    color: var(--text-secondary);
+    background: none;
+    border: none;
+    cursor: pointer;
+    transition: background-color var(--transition-fast), color var(--transition-fast);
+  }
+
+  .gen-quality-btn:hover {
+    color: var(--text-primary);
+  }
+
+  .gen-quality-btn.is-active {
+    color: var(--text-primary);
+    background-color: color-mix(in oklab, var(--accent) 22%, transparent);
+  }
+
+  .gen-quality-custom {
+    font-size: 0.714rem;
+    color: var(--text-muted);
+  }
+
   /* --------------------------------------------------------------------------
      First run: setup offered in the middle of the empty viewport
      -------------------------------------------------------------------------- */

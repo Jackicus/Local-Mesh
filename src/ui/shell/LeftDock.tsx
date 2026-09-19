@@ -17,12 +17,16 @@ interface NavItem {
   id: string;
   label: string;
   icon: IconComponent;
+  /** Hidden until the user has made a mesh, or turned advanced tools on. */
+  advanced?: boolean;
 }
 
+// Models before Pipelines: installing one is the thing a new user has to do
+// first, and the node editor is the most advanced screen in the app.
 const MAIN_NAV_ITEMS: NavItem[] = [
   { id: 'generate', label: 'Generate', icon: BoxIcon },
-  { id: 'pipelines', label: 'Pipelines', icon: WorkflowIcon },
   { id: 'models', label: 'Models', icon: PackageIcon },
+  { id: 'pipelines', label: 'Pipelines', icon: WorkflowIcon, advanced: true },
 ];
 
 const FOOTER_NAV_ITEMS: NavItem[] = [
@@ -133,7 +137,7 @@ export const LeftDock: React.FC = () => {
       {/* Fixed width so the content doesn't reflow while the dock animates closed */}
       <div className="left-dock-inner" style={{ width: `${dockState.width}px` }}>
         <nav className="left-dock-nav">
-          {MAIN_NAV_ITEMS.map(renderNavItem)}
+          {MAIN_NAV_ITEMS.filter((item) => !item.advanced || dockState.advanced).map(renderNavItem)}
         </nav>
 
         <div className="left-dock-footer">

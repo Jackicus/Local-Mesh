@@ -7,6 +7,7 @@ import { dockStore } from '../../stores/dockStore';
 import { generationStore } from '../../stores/generationStore';
 import { useModelStore } from '../../stores/modelStore';
 import { usePipelineStore } from '../../stores/pipelineStore';
+import { QualityPicker } from './QualityPicker';
 import { useRunTarget } from './runTarget';
 
 /**
@@ -107,6 +108,13 @@ export const PipelinePanel: React.FC<PipelinePanelProps> = ({ job, queuedIndex =
 
       {job === undefined && (
         <>
+          {/* The one dial a normal user wants, next to the model it acts on —
+              rather than four sliders on the most advanced screen in the app. */}
+          <div className="gen-quality-row">
+            <span className="gen-popover-title">Quality</span>
+            <QualityPicker />
+          </div>
+
           <div className="gen-meta-row">
             <Badge variant={target.modelReady ? 'neutral' : 'warning'} icon={<CpuIcon size={12} />}>
               {target.modelName ?? 'No model in graph'}

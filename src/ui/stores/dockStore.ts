@@ -14,6 +14,14 @@ export interface DockState {
   width: number;
   activeItem: string;
   bottom: BottomDockState;
+  /**
+   * Show the advanced tools — today, the Pipelines node editor. Off for a new
+   * install: a beginner clicking the second item in the nav should not land on
+   * a graph of wires, octree resolutions and guidance scales. It turns itself
+   * on the first time a mesh finishes, so the editor appears once the app has
+   * actually worked, and Settings has a switch for it either way.
+   */
+  advanced: boolean;
 }
 
 export const DOCK_MIN_WIDTH = 180;
@@ -25,6 +33,7 @@ export const BOTTOM_DOCK_MAX_HEIGHT = 600;
 export const BOTTOM_DOCK_DEFAULT_HEIGHT = 300;
 
 const BOTTOM_STORAGE_KEY = 'local-mesh.bottom-dock';
+const ADVANCED_KEY = 'local-mesh.advanced';
 
 const clampBottomHeight = (height: number): number =>
   Math.max(BOTTOM_DOCK_MIN_HEIGHT, Math.min(BOTTOM_DOCK_MAX_HEIGHT, Math.round(height)));
@@ -44,6 +53,14 @@ function readBottom(): BottomDockState {
   }
 }
 
+function readAdvanced(): boolean {
+  try {
+    return localStorage.getItem(ADVANCED_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
 function persistBottom(bottom: BottomDockState) {
   try {
     localStorage.setItem(BOTTOM_STORAGE_KEY, JSON.stringify(bottom));
@@ -58,6 +75,7 @@ let state: DockState = {
   width: DOCK_DEFAULT_WIDTH,
   activeItem: 'generate',
   bottom: readBottom(),
+  advanced: readAdvanced(),
 };
 
 // Set of component listeners
@@ -111,6 +129,19 @@ export const dockStore = {
 
   toggleBottom: () => {
     dockStore.setBottomOpen(!state.bottom.isOpen);
+  },
+
+  setAdvanced: (advanced: boolean) => {
+    if (state.advanced === advanced) return;
+    state = { ...state, advanced };
+    try {
+      localStorage.setItem(ADVANCED_KEY, String(advanced));
+    } catch {
+      /* private mode — the switch just forgets between runs */
+    }
+    // Leaving the user on a view that is about to vanish strands them.
+    if (!advanced && state.activeItem === 'pipelines') state = { ...state, activeItem: 'generate' };
+    notify();
   },
 
   subscribe: (listener: () => void) => {
