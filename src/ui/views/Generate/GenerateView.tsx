@@ -7,6 +7,7 @@ import { QueueStack } from './QueueStack';
 import { Scene } from './Scene';
 import { SetupCard } from './SetupCard';
 import { ToolPlates } from './ToolPlates';
+import { ViewOptions } from './ViewOptions';
 import { useRunTarget } from './runTarget';
 import { imagePathsFromDrop } from './ImageDrop';
 import { useViewerStore } from './viewerStore';
@@ -60,9 +61,10 @@ export const GenerateView: React.FC = () => {
       <Scene quiet={needsSetup} />
       {needsSetup && <SetupCard />}
 
-      {/* Where the camera is, and the way back. */}
+      {/* Where the camera is, the way back, and how the scene is drawn. */}
       <div className="gen-navigator">
         <CameraGizmo />
+        <ViewOptions />
         <Tooltip content="Reset camera" position="left">
           <button
             type="button"

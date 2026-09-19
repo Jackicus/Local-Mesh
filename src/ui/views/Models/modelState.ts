@@ -165,7 +165,7 @@ export function deriveModelState({
 
   steps.push({
     key: 'engine',
-    label: 'Python engine',
+    label: 'Shared setup',
     status: envReady ? 'done' : envBusy || onEngine ? 'running' : 'todo',
     state: envReady ? 'Installed' : envBusy || onEngine ? 'Installing…' : 'Not installed',
     help: STEP_HELP.engine,
@@ -195,7 +195,7 @@ export function deriveModelState({
   if (needsExtras) {
     steps.push({
       key: 'extras',
-      label: 'Extra packages',
+      label: 'Finishing touches',
       status:
         deps === 'installed'
           ? 'done'
@@ -215,7 +215,7 @@ export function deriveModelState({
               ? 'Install failed'
               : envReady
                 ? 'Not installed'
-                : 'Waiting for the engine',
+                : 'Waiting for the shared setup',
       help: STEP_HELP.extras,
     });
   }

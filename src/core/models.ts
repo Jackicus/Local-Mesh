@@ -759,7 +759,7 @@ export const MODELS: ModelDefinition[] = [
   },
   {
     id: 'mock',
-    name: 'Mock (procedural)',
+    name: 'Test shape',
     vendor: 'Local Mesh',
     description:
       'No download, no GPU: emits a procedural mesh with fake progress so the queue, viewer and logs can be exercised end-to-end.',

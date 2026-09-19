@@ -239,23 +239,7 @@
   /* --------------------------------------------------------------------------
      Embedded Readme Viewer (Help View)
      -------------------------------------------------------------------------- */
-  .readme-view-container {
-    max-height: 360px;
-    overflow-y: auto;
-    background-color: var(--bg-app);
-    border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-md);
-    padding: 16px;
-  }
 
-  .readme-content {
-    font-family: var(--font-mono);
-    font-size: 0.857rem;
-    line-height: 1.6;
-    color: var(--text-secondary);
-    white-space: pre-wrap;
-    word-break: break-word;
-  }
 
   /* --------------------------------------------------------------------------
      CLAUDE.md Cards (Developer View, dev only)

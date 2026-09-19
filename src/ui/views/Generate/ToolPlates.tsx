@@ -1,24 +1,26 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Tooltip } from '../../components';
-import { CameraIcon, EditIcon, FolderIcon, LoaderIcon } from '../../assets/icons';
+import { EditIcon, FolderIcon, LoaderIcon } from '../../assets/icons';
 import { useGenerationStore } from '../../stores/generationStore';
-import { CameraPanel } from './CameraPanel';
 import { MeshTools } from './MeshTools';
 import { OutputsPanel } from './OutputsPanel';
 import { useViewerStore } from './viewerStore';
 
-type PlateId = 'camera' | 'edit' | 'outputs';
+type PlateId = 'edit' | 'outputs';
 
 const HINTS: Record<PlateId, string> = {
-  camera: 'Scene and camera',
   edit: 'Edit the mesh in view',
   outputs: 'Meshes on disk',
 };
 
 /**
- * Three plates, bottom right, each a single button that opens one panel.
- * Only one is ever open: they act on the same viewport and would otherwise
- * cover each other as well as the model.
+ * Two plates, bottom right, each a single button that opens one panel. Only
+ * one is ever open: they act on the same viewport and would otherwise cover
+ * each other as well as the model.
+ *
+ * Both are about the mesh. How the scene is *drawn* used to be a third plate
+ * here called "Camera", which competed with the orientation dial for the same
+ * idea; it now sits beside that dial as ViewOptions.
  */
 export const ToolPlates: React.FC = () => {
   const [viewer] = useViewerStore();
@@ -77,7 +79,6 @@ export const ToolPlates: React.FC = () => {
 
   return (
     <div className="gen-plates" ref={rootRef}>
-      {plate('camera', 'Camera', <CameraIcon size={14} />, <CameraPanel />)}
       {plate(
         'edit',
         'Edit',

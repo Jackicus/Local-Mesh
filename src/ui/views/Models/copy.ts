@@ -28,7 +28,7 @@ const BLURB: Record<string, string> = {
   trellis:
     'Works in a completely different way to the rest, so it succeeds and fails on different images. Built for a 16 GB card.',
   mock:
-    'A pretend model. It makes a simple shape instantly, with nothing to download and no graphics card needed — use it to check that Local Mesh works end to end.',
+    'Not a real model: it makes a simple shape instantly, with nothing to download and no graphics card needed. Use it to check Local Mesh works end to end.',
 };
 
 export function blurb(model: ModelDefinition): string {
@@ -64,9 +64,9 @@ export const PHASE_LABEL: Record<EnvPhase, string> = {
 
 /** What each of the three install steps actually is, in one sentence. */
 export const STEP_HELP = {
-  engine: 'A private copy of Python and PyTorch, kept inside Local Mesh. Installed once and shared by every model.',
-  files: 'The model weights, downloaded straight from Hugging Face. This part needs no Python at all, so you can start it before anything else.',
-  extras: 'The few Python packages this particular model needs on top of the shared ones.',
+  engine: 'The shared groundwork every model runs on, kept inside Local Mesh. Installed once, and nothing is added to the rest of your computer.',
+  files: 'The model itself, downloaded straight from Hugging Face.',
+  extras: 'A few smaller pieces this particular model needs on top of the shared ones.',
 } as const;
 
 export const UV_INSTALL = 'curl -LsSf https://astral.sh/uv/install.sh | sh';

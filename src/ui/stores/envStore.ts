@@ -59,9 +59,9 @@ export const envStore = {
     store.setState({ settingUp: true, setupLines: [], progress: null });
     try {
       await electron.setupEnv();
-      toast.success('Python environment ready');
+      toast.success('Setup finished');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err), { title: 'Environment setup failed' });
+      toast.error(err instanceof Error ? err.message : String(err), { title: 'Setup could not finish' });
     } finally {
       store.setState({ settingUp: false });
       await refresh();

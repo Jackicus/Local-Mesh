@@ -70,7 +70,9 @@
   .gen-plate,
   .gen-scene-note,
   .gen-gizmo,
-  .gen-home {
+  .gen-home,
+  .gen-viewopts-panel,
+  .gen-viewopts-btn {
     background-color: var(--gen-plate-bg);
     backdrop-filter: blur(12px);
     border: 1px solid var(--border-subtle);
@@ -328,6 +330,23 @@
     gap: var(--gen-s3);
   }
 
+  /* How the scene is drawn, docked with the dial that says where it is seen from */
+  .gen-viewopts {
+    position: relative;
+  }
+
+  .gen-viewopts-panel {
+    position: absolute;
+    top: 0;
+    right: calc(100% + var(--gen-s3));
+    z-index: 4;
+    width: var(--gen-panel-w);
+    max-width: calc(100vw - var(--gen-inset) * 4);
+    padding: var(--gen-s4);
+    border-radius: var(--radius-md);
+    animation: gen-rise var(--transition-base) both;
+  }
+
   .gen-gizmo {
     position: relative;
     width: var(--gen-gizmo-size);
@@ -397,7 +416,9 @@
     border-style: dashed;
   }
 
-  .gen-home {
+  /* The two square buttons under the dial match each other, not the plates */
+  .gen-home,
+  .gen-viewopts-btn {
     width: 32px;
     height: 32px;
     border-radius: var(--radius-md);

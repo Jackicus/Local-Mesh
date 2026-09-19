@@ -107,8 +107,8 @@ export const EnvironmentCard: React.FC = () => {
             <CpuIcon size={20} />
           </span>
           <div>
-            <h3 className="ui-card-title">Python engine</h3>
-            <p className="ui-card-subtitle">Installed once, shared by every model</p>
+            <h3 className="ui-card-title">Shared setup</h3>
+            <p className="ui-card-subtitle">Installed once, used by every model</p>
           </div>
         </div>
         <div className="ui-card-action">{badge}</div>
@@ -119,11 +119,11 @@ export const EnvironmentCard: React.FC = () => {
           <div className="models-blocker">
             <p className="models-blocker-title">
               <AlertTriangleIcon size={15} />
-              One thing is missing first: uv
+              One small helper is missing
             </p>
             <p className="models-blocker-text">
-              Local Mesh builds the engine with <strong>uv</strong>, a small installer for Python. Run this in a
-              terminal, then press Check again.
+              This is the only part Local Mesh cannot install for you. Copy the line below, paste it into a terminal
+              and press Enter, then come back and press Check again.
             </p>
             <div className="models-code-row">
               <code className="models-code">{UV_INSTALL}</code>
@@ -252,7 +252,7 @@ export const EnvironmentCard: React.FC = () => {
               disabled={!status}
               onClick={() => void actions.setup()}
             >
-              {needsRepair ? 'Repair the engine' : 'Install the engine'}
+              {needsRepair ? 'Repair it' : 'Install it'}
             </Button>
           )
         )}
@@ -261,7 +261,7 @@ export const EnvironmentCard: React.FC = () => {
       <Modal
         isOpen={confirmRemove}
         onClose={() => setConfirmRemove(false)}
-        title="Remove the Python engine?"
+        title="Remove the shared setup?"
         subtitle="Your downloaded model files are kept."
         icon={<AlertTriangleIcon size={20} />}
         size="sm"
@@ -286,7 +286,7 @@ export const EnvironmentCard: React.FC = () => {
               // already gone by then: without this the failure is invisible.
               void actions
                 .remove()
-                .then(() => toast.success('Python engine removed'))
+                .then(() => toast.success('Shared setup removed'))
                 .catch((err: unknown) =>
                   toast.error(err instanceof Error ? err.message : String(err), { title: 'Could not remove the engine' })
                 );
