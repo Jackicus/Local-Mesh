@@ -33,7 +33,7 @@ const FOOTER_NAV_ITEMS: NavItem[] = [
   // Not a view: toggles the bottom dock.
   { id: 'logs', label: 'Logs', icon: ScrollTextIcon },
   { id: 'developer', label: 'Developer', icon: CodeIcon },
-  { id: 'help', label: 'Help & Support', icon: HelpIcon },
+  { id: 'help', label: 'Help', icon: HelpIcon },
   { id: 'settings', label: 'Settings', icon: SettingsIcon },
 ];
 

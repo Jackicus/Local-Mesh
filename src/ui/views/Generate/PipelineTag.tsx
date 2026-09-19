@@ -162,7 +162,12 @@ export const PipelinePanel: React.FC<PipelinePanelProps> = ({ job, queuedIndex =
           variant="subtle"
           size="sm"
           icon={<EditIcon size={13} />}
-          onClick={() => dockStore.setActiveItem('pipelines')}
+          onClick={() => {
+            // Opening the editor on purpose is opting in to it, so the nav
+            // item appears rather than leaving the view unreachable again.
+            dockStore.setAdvanced(true);
+            dockStore.setActiveItem('pipelines');
+          }}
         >
           Edit pipelines
         </Button>
