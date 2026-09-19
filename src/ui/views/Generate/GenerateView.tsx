@@ -5,7 +5,9 @@ import { useGenerationStore } from '../../stores/generationStore';
 import { CameraGizmo } from './CameraGizmo';
 import { QueueStack } from './QueueStack';
 import { Scene } from './Scene';
+import { SetupCard } from './SetupCard';
 import { ToolPlates } from './ToolPlates';
+import { useRunTarget } from './runTarget';
 import { imagePathsFromDrop } from './ImageDrop';
 import { useViewerStore } from './viewerStore';
 
@@ -16,9 +18,13 @@ import { useViewerStore } from './viewerStore';
  * reaches the window edges while the overlays stay clear of the titlebar.
  */
 export const GenerateView: React.FC = () => {
-  const [, viewerActions] = useViewerStore();
+  const [viewer, viewerActions] = useViewerStore();
   const [gen] = useGenerationStore();
+  const target = useRunTarget();
   const [dragging, setDragging] = useState(false);
+  // Until the selected pipeline can actually run, the middle of the screen is
+  // the setup card's — there is nothing else worth saying there.
+  const needsSetup = Boolean(target.modelId) && !(target.envReady && target.modelReady) && !viewer.loaded;
   // dragenter/dragleave fire for every child; count them so crossing an
   // inner element doesn't flicker the veil off.
   const dragDepth = useRef(0);
@@ -51,7 +57,8 @@ export const GenerateView: React.FC = () => {
         viewerActions.addImages(imagePathsFromDrop(event));
       }}
     >
-      <Scene />
+      <Scene quiet={needsSetup} />
+      {needsSetup && <SetupCard />}
 
       {/* Where the camera is, and the way back. */}
       <div className="gen-navigator">

@@ -9,12 +9,14 @@ import { fileBaseName, formatCount } from './format';
  * that belong to the model rather than the app chrome — the caption for what
  * is on screen, and the invitation when nothing is.
  */
-export const Scene: React.FC = () => {
+export const Scene: React.FC<{ /** Setup is asking for the middle of the screen. */ quiet?: boolean }> = ({
+  quiet = false,
+}) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [viewer] = useViewerStore();
   useThreeScene(containerRef);
 
-  const empty = !viewer.loaded && !viewer.loading;
+  const empty = !viewer.loaded && !viewer.loading && !quiet;
 
   return (
     <>

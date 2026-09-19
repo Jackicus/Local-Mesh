@@ -1,7 +1,6 @@
 import React from 'react';
 import { Button } from '../../components';
 import { ChevronDownIcon, ImagePlusIcon, SparklesIcon } from '../../assets/icons';
-import { dockStore } from '../../stores/dockStore';
 import { useGenerationStore } from '../../stores/generationStore';
 import { ImageDrop, pickImages } from './ImageDrop';
 import type { BarPanel } from './QueueBar';
@@ -46,29 +45,13 @@ export const Composer: React.FC<ComposerProps> = ({ panel, onPanel, onClosePanel
         ? fileBaseName(target.fixedImagePath)
         : 'New job';
 
+  // The bar is one line wide and clips what will not fit, so it never carries
+  // a sentence with a link in it: when setup is outstanding the card in the
+  // middle of the viewport is saying so, at full width, with the button.
   const detail = (): React.ReactNode => {
     if (gen.workerError) return <span className="is-error">{gen.workerError}</span>;
     if (!target.pipelineId) return 'Choose a pipeline to start';
-    if (!target.envReady) {
-      return (
-        <>
-          The python environment isn&apos;t set up.{' '}
-          <button type="button" className="gen-link" onClick={() => dockStore.setActiveItem('models')}>
-            Set it up in Models
-          </button>
-        </>
-      );
-    }
-    if (!target.modelReady) {
-      return (
-        <>
-          {target.modelName} isn&apos;t installed.{' '}
-          <button type="button" className="gen-link" onClick={() => dockStore.setActiveItem('models')}>
-            Finish it in Models
-          </button>
-        </>
-      );
-    }
+    if (!target.envReady || !target.modelReady) return 'Finish setup first';
     if (count === 0 && target.fixedImagePath) return "Runs the pipeline's own image";
     if (count === 0) {
       return (

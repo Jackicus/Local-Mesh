@@ -41,7 +41,7 @@
        ground in both themes. */
     --gen-inset-bg: color-mix(in oklab, var(--bg-app) 60%, transparent);
 
-    --gen-queue-width: 460px;
+    --gen-queue-width: 520px;
     --gen-panel-w: 236px;
     /* The dial's plate, and the circle the axis handles are laid out on.
        --gen-gizmo-core must match RADIUS * 2 in CameraGizmo.tsx. */
@@ -182,6 +182,91 @@
 
   .gen-empty-hint {
     font-size: 0.929rem;
+    color: var(--text-muted);
+  }
+
+  /* --------------------------------------------------------------------------
+     First run: setup offered in the middle of the empty viewport
+     -------------------------------------------------------------------------- */
+  .gen-setup {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    padding: calc(var(--topbar-height) + 24px) 24px 140px;
+    /* The card takes its own clicks; the viewport keeps the rest. */
+    pointer-events: none;
+    z-index: 2;
+  }
+
+  .gen-setup-card {
+    pointer-events: auto;
+    width: min(440px, 100%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--gen-s2);
+    padding: 22px 24px 18px;
+    text-align: center;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border-strong);
+    background-color: color-mix(in oklab, var(--bg-app) 88%, transparent);
+    backdrop-filter: blur(12px);
+    box-shadow: var(--shadow-lg);
+  }
+
+  .gen-setup-glyph {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    border-radius: var(--radius-md);
+    color: var(--accent);
+    background-color: color-mix(in oklab, var(--accent) 14%, transparent);
+  }
+
+  .gen-setup-title {
+    font-size: 1.143rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .gen-setup-lede {
+    font-size: 0.929rem;
+    color: var(--text-secondary);
+    text-wrap: pretty;
+  }
+
+  .gen-setup-blurb {
+    font-size: 0.857rem;
+    color: var(--text-muted);
+    text-wrap: pretty;
+  }
+
+  .gen-setup-progress {
+    width: 100%;
+    text-align: start;
+    margin-block-start: var(--gen-s1);
+  }
+
+  .gen-setup-blocked {
+    display: flex;
+    align-items: center;
+    gap: var(--gen-s2);
+    font-size: 0.857rem;
+    color: var(--warning);
+    text-align: start;
+  }
+
+  .gen-setup-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--gen-s3);
+    margin-block-start: var(--gen-s2);
+  }
+
+  .gen-setup-foot {
+    font-size: 0.786rem;
     color: var(--text-muted);
   }
 
