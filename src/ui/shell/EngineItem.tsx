@@ -1,131 +1,70 @@
 import React from 'react';
-import { CpuIcon, PowerIcon, UnplugIcon } from '../assets/icons';
-import { Tooltip } from '../components';
-import { useNow } from '../hooks';
+import { LoaderIcon } from '../assets/icons';
 import { getModel } from '../../core/models';
 import type { GenerationStoreState } from '../stores/generationStore';
 import { useGenerationStore } from '../stores/generationStore';
 
-type Tone = 'muted' | 'accent' | 'success' | 'warning' | 'danger';
+type Tone = 'accent' | 'success' | 'danger';
+
+interface Readout {
+  tone: Tone;
+  /** Spinner rather than a dot — the worker is mid-task. */
+  busy: boolean;
+  text: string;
+  /** Quiet second line: the model in flight, or the raw error behind the plain one. */
+  detail: string | null;
+}
 
 function modelName(id: string | null): string | null {
   if (!id) return null;
   return getModel(id)?.name ?? id;
 }
 
-function engineState(state: GenerationStoreState): { text: string; tone: Tone } {
-  switch (state.worker) {
+/**
+ * What to say, in words a first-time user can act on. Anything that isn't the
+ * worker actually doing something (or failing at it) reads as `null` — the
+ * resting state of the python side is silence, not a status line.
+ */
+function readout(gen: GenerationStoreState): Readout | null {
+  const model = modelName(gen.loadedModelId) ?? modelName(gen.loadingModelId);
+
+  switch (gen.worker) {
     case 'starting':
-      return { text: 'Starting', tone: 'warning' };
-    case 'idle':
-      return { text: 'Idle', tone: 'success' };
     case 'loading':
-      return { text: 'Loading', tone: 'warning' };
+      return { tone: 'accent', busy: true, text: 'Getting ready…', detail: model };
     case 'generating':
-      return { text: 'Generating', tone: 'accent' };
     case 'processing':
-      return { text: 'Processing', tone: 'accent' };
+      return { tone: 'accent', busy: true, text: 'Working…', detail: model };
     case 'unloading':
-      return { text: 'Unloading', tone: 'warning' };
+      return { tone: 'accent', busy: true, text: 'Finishing up…', detail: model };
     case 'error':
-      return { text: 'Error', tone: 'danger' };
+      return { tone: 'danger', busy: false, text: 'Something went wrong', detail: gen.workerError };
     default:
-      return { text: 'Stopped', tone: 'muted' };
+      // 'idle' and 'stopped': a loaded model is worth one quiet line, nothing else is.
+      return model ? { tone: 'success', busy: false, text: `${model} ready`, detail: null } : null;
   }
 }
 
-function countdown(ms: number): string {
-  const total = Math.max(0, Math.round(ms / 1000));
-  const minutes = Math.floor(total / 60);
-  const seconds = total % 60;
-  return minutes > 0 ? `${minutes}m ${seconds.toString().padStart(2, '0')}s` : `${seconds}s`;
-}
-
-function gb(bytes: number | null | undefined): string {
-  if (bytes == null || !Number.isFinite(bytes)) return '—';
-  return (bytes / 1024 ** 3).toFixed(1);
-}
-
-/** Its own component so the shared second-ticker only runs while a countdown is on screen. */
-const IdleCountdown: React.FC<{ until: number }> = ({ until }) => {
-  const now = useNow(1000);
-  return <span> · unloads in {countdown(until - now)}</span>;
-};
-
 /**
- * The python side, as a dock item. It sits above Logs because it is the same
- * kind of thing: a standing readout of what the app is doing off-screen, with
- * the one control that readout implies — letting go of the weights.
+ * The python side, as a dock item — but only when it has something to say.
+ * At rest it renders nothing: "stopped" is how the worker spends most of its
+ * life, and a beginner reading that as a fault is worse than no readout at all.
+ * The expert controls (unload, stop) live in Settings.
  */
 export const EngineItem: React.FC = () => {
-  const [gen, generation] = useGenerationStore();
-  const state = engineState(gen);
-  const loaded = modelName(gen.loadedModelId) ?? modelName(gen.loadingModelId);
-  const { vramUsedBytes, vramTotalBytes } = gen.memory;
-  const vramPct = vramUsedBytes != null && vramTotalBytes ? (vramUsedBytes / vramTotalBytes) * 100 : null;
-  const resting = gen.worker === 'stopped' && !gen.loadedModelId;
+  const [gen] = useGenerationStore();
+  const state = readout(gen);
+  if (!state) return null;
 
   return (
-    <section className="dock-engine" aria-label="Engine">
-      <div className="dock-engine-head">
-        <span className="dock-item-icon">
-          <CpuIcon size={20} />
+    <section className={`dock-engine is-${state.tone}`} aria-label="Engine" aria-live="polite">
+      <p className="dock-engine-line" title={state.detail ?? undefined}>
+        <span className="dock-engine-mark" aria-hidden="true">
+          {state.busy ? <LoaderIcon size={14} className="dock-engine-spin" /> : <span className="dock-engine-dot" />}
         </span>
-        <span className="dock-engine-title">Engine</span>
-        <span className={`dock-engine-state is-${state.tone}`}>
-          <span className="dock-engine-dot" aria-hidden="true" />
-          {state.text}
-        </span>
-      </div>
-
-      {!resting && (
-        <div className="dock-engine-body">
-          <p className="dock-engine-model" title={loaded ?? undefined}>
-            {loaded ?? 'No model loaded'}
-          </p>
-
-          {vramPct != null && (
-            <div className="dock-meter" role="img" aria-label={`VRAM ${gb(vramUsedBytes)} of ${gb(vramTotalBytes)} gigabytes`}>
-              <span className={`dock-meter-track ${vramPct > 92 ? 'is-danger' : vramPct > 75 ? 'is-warning' : ''}`}>
-                <span className="dock-meter-fill" style={{ width: `${Math.min(100, vramPct)}%` }} />
-              </span>
-              <span className="dock-meter-figure">
-                {gb(vramUsedBytes)}/{gb(vramTotalBytes)} GB
-              </span>
-            </div>
-          )}
-
-          <p className="dock-engine-meta">
-            {gen.device} · {gen.precision}
-            {gen.idleUnloadAt != null && <IdleCountdown until={gen.idleUnloadAt} />}
-          </p>
-
-          {gen.workerError && <p className="dock-engine-error">{gen.workerError}</p>}
-
-          <div className="dock-engine-actions">
-            <button
-              type="button"
-              className="dock-engine-btn"
-              disabled={!gen.loadedModelId}
-              onClick={() => void generation.unloadModel()}
-            >
-              <UnplugIcon size={13} />
-              Unload
-            </button>
-            <Tooltip content="Stop the python worker" position="top">
-              <button
-                type="button"
-                className="dock-engine-btn is-icon"
-                aria-label="Stop the python worker"
-                disabled={gen.worker === 'stopped'}
-                onClick={() => void generation.stopWorker()}
-              >
-                <PowerIcon size={13} />
-              </button>
-            </Tooltip>
-          </div>
-        </div>
-      )}
+        <span className="dock-engine-text">{state.text}</span>
+      </p>
+      {state.detail && <p className="dock-engine-detail">{state.detail}</p>}
     </section>
   );
 };
