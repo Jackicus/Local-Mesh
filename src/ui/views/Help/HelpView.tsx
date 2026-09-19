@@ -1,65 +1,56 @@
 import React from 'react';
 import { Card, Badge, Button } from '../../components';
 import {
-  HelpIcon,
   KeyboardIcon,
   MailIcon,
-  BookOpenIcon,
   CheckCircleIcon,
+  AlertCircleIcon,
   SparklesIcon,
 } from '../../assets/icons';
 import { APP_SHORTCUTS, getShortcutKeys } from '../../hooks';
-import rootReadme from '../../../../README.md?raw';
 
 export const HelpView: React.FC = () => {
   return (
     <div className="view-container">
       <header className="view-header">
-        <Badge variant="accent" icon={<HelpIcon size={14} />}>
-          Documentation &amp; Assistance
-        </Badge>
-        <h1 className="view-title">Help &amp; Support</h1>
+        <h1 className="view-title">Help</h1>
         <p className="view-description">
-          How to get Local Mesh from a blank install to a first mesh, plus the project README, keyboard shortcuts,
-          and where to look when something goes wrong.
+          How to make your first mesh, and what to do if one does not come out.
         </p>
       </header>
 
       <div className="view-list">
-        {/* 0. Getting started */}
+        {/* 1. Getting started */}
         <Card
           title="Getting started"
-          subtitle="Three steps from a blank install to a first mesh"
+          subtitle="Three steps to your first mesh"
           icon={<SparklesIcon size={20} />}
         >
           <ul className="guide-list">
             <li>
               <CheckCircleIcon size={16} className="guide-check" />
-              <span><strong>1. Set up the environment</strong> in <strong>Models</strong>: it needs <code>uv</code> on your PATH, then installs Python 3.11, torch (cu126) and the worker under <code>~/.local-mesh</code>.</span>
+              <span>
+                <strong>1. Press Install on the Generate screen</strong> and let it finish. It is a big download,
+                so it can take a while, but you only do it once.
+              </span>
             </li>
             <li>
               <CheckCircleIcon size={16} className="guide-check" />
-              <span><strong>2. Download a model</strong> from the same view. Hunyuan3D 2 mini is the recommended fit for an 8 GB card; Mock needs no download if you just want to see the queue work.</span>
+              <span>
+                <strong>2. Drag a picture in.</strong> Drop any photo onto the Generate screen.
+              </span>
             </li>
             <li>
               <CheckCircleIcon size={16} className="guide-check" />
-              <span><strong>3. Drop an image in Generate.</strong> The job runs through the selected pipeline and the mesh appears in the viewer and under <code>outputs/</code>.</span>
+              <span>
+                <strong>3. Press Generate.</strong> The 3D shape appears in the window when it is ready, and you
+                can save it from there.
+              </span>
             </li>
           </ul>
         </Card>
 
-        {/* 1. Project Overview / Root README Display */}
-        <Card
-          title="Project Documentation &amp; Overview"
-          subtitle="Displaying repository root README.md"
-          icon={<BookOpenIcon size={20} />}
-        >
-          <div className="readme-view-container">
-            <pre className="readme-content">{rootReadme}</pre>
-          </div>
-        </Card>
-
-        {/* 2. User Keyboard Shortcuts */}
+        {/* 2. Keyboard shortcuts */}
         <Card
           title="Keyboard Shortcuts"
           subtitle="Quick desktop shortcuts for navigating the application"
@@ -80,10 +71,41 @@ export const HelpView: React.FC = () => {
           </div>
         </Card>
 
-        {/* 3. Support & Assistance */}
+        {/* 3. If something goes wrong */}
         <Card
-          title="Support &amp; Troubleshooting"
-          subtitle="Need assistance or have feedback?"
+          title="If something goes wrong"
+          subtitle="Where to look first"
+          icon={<AlertCircleIcon size={20} />}
+        >
+          <ul className="guide-list">
+            <li>
+              <AlertCircleIcon size={16} className="guide-check" />
+              <span>
+                The Logs panel at the bottom of the window (<kbd>{getShortcutKeys('toggle-logs') || 'Ctrl + J'}</kbd>)
+                shows what Local Mesh was doing and where it stopped.
+              </span>
+            </li>
+            <li>
+              <AlertCircleIcon size={16} className="guide-check" />
+              <span>
+                A misshapen mesh usually means the picture was hard to read. One clear object on a plain
+                background works best.
+              </span>
+            </li>
+            <li>
+              <AlertCircleIcon size={16} className="guide-check" />
+              <span>
+                A run that stops partway usually means the graphics card ran out of memory. A smaller model on the
+                Models screen will normally finish.
+              </span>
+            </li>
+          </ul>
+        </Card>
+
+        {/* 4. Support */}
+        <Card
+          title="Still stuck"
+          subtitle="Get in touch"
           icon={<MailIcon size={20} />}
           action={
             <Button
@@ -97,7 +119,8 @@ export const HelpView: React.FC = () => {
           }
         >
           <p className="setting-description">
-            If you encounter any issues, try reloading the window with <kbd>{getShortcutKeys('reload-window') || 'Ctrl + R'}</kbd> or clearing local preferences under <strong>Settings &gt; Storage &amp; Data</strong>.
+            Reloading the window with <kbd>{getShortcutKeys('reload-window') || 'Ctrl + R'}</kbd> is safe and clears
+            most oddities. If that does not help, send us a note and say what you were doing.
           </p>
         </Card>
       </div>
