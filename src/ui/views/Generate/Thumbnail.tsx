@@ -5,11 +5,13 @@ import { fileBaseName } from './format';
 
 export interface ThumbnailProps {
   path: string;
-  size?: 'sm' | 'md';
+  size?: 'xs' | 'sm' | 'md';
   onRemove?: () => void;
 }
 
-/** The source image, wherever it needs to appear: staging strip or queue row. */
+const FALLBACK_ICON = { xs: 11, sm: 13, md: 16 } as const;
+
+/** The source image, wherever it needs to appear: staging strip or queue bar. */
 export const Thumbnail: React.FC<ThumbnailProps> = ({ path, size = 'md', onRemove }) => {
   const url = useThumbnail(path);
   const name = fileBaseName(path);
@@ -20,7 +22,7 @@ export const Thumbnail: React.FC<ThumbnailProps> = ({ path, size = 'md', onRemov
         <img src={url} alt={name} />
       ) : (
         <span className="gen-thumb-fallback">
-          <ImageIcon size={size === 'sm' ? 13 : 16} />
+          <ImageIcon size={FALLBACK_ICON[size]} />
         </span>
       )}
       {onRemove && (

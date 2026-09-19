@@ -22,3 +22,22 @@ export function formatGb(bytes: number | null | undefined): string {
 export function gbToBytes(gb: number): number {
   return gb * GB;
 }
+
+/** "12 MB/s" — a transfer rate in bytes per second. */
+export function formatRate(bytesPerSecond: number | null): string | null {
+  if (bytesPerSecond == null || !Number.isFinite(bytesPerSecond) || bytesPerSecond <= 0) return null;
+  return `${formatBytes(bytesPerSecond)}/s`;
+}
+
+/**
+ * A rough remaining time in words: "about 6 min left". Deliberately coarse —
+ * a download that swings between 2 and 30 MB/s cannot promise seconds.
+ */
+export function formatEta(seconds: number | null): string | null {
+  if (seconds == null || !Number.isFinite(seconds) || seconds <= 0 || seconds > 24 * 3600) return null;
+  if (seconds < 90) return 'less than a minute left';
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `about ${minutes} min left`;
+  const hours = Math.round(seconds / 360) / 10;
+  return `about ${hours} h left`;
+}

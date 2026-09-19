@@ -17,7 +17,9 @@ export const ToastContainer: React.FC<ToastContainerProps> = ({
     <div
       className={`ui-toast-container ui-toast-pos-${position}`}
       aria-live="polite"
-      aria-atomic="true"
+      // Not atomic: atomic re-reads the whole stack every time one toast is
+      // added or removed, so a fourth toast would re-announce the other three
+      aria-atomic="false"
     >
       {toasts.map((item) => (
         // Slot collapses its grid row while the toast exits, so the rest of

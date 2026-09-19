@@ -1,4 +1,5 @@
-import type { ExportFormat, GenerationJobSpec, PostProcessSpec } from './generation';
+import type { ExportFormat, GenerationJobSpec, MeshOp, MeshOpKind } from './generation';
+import { MESH_OP_DEFINITIONS, MESH_OP_KINDS, isMeshOpKind, normalizeMeshOp } from './generation';
 import { defaultModelSettings, getModel, MODELS } from './models';
 
 /**
@@ -8,9 +9,11 @@ import { defaultModelSettings, getModel, MODELS } from './models';
  * shape is defined per node type below.
  *
  * The canonical chain is:
- *   image-input → (background-removal) → mesh-generator → (post-process) → mesh-export
- * Optional nodes are pass-throughs when absent. compilePipeline() walks the
- * graph and folds it into a GenerationJobSpec for the python worker.
+ *   image-input → (background-removal) → mesh-generator → (mesh ops)* → mesh-export
+ * Optional nodes are pass-throughs when absent. Each mesh op is its own node
+ * type (one per MeshOpKind), so a pipeline can run them in any order and more
+ * than once. compilePipeline() walks the graph and folds it into a
+ * GenerationJobSpec for the python worker.
  */
 export type PortType = 'image' | 'mesh';
 
@@ -18,8 +21,13 @@ export type NodeType =
   | 'image-input'
   | 'background-removal'
   | 'mesh-generator'
-  | 'post-process'
+  | MeshOpKind
   | 'mesh-export';
+
+/** The node types that carry a mesh op; their id is the op kind itself. */
+export function isMeshOpNodeType(type: NodeType): type is MeshOpKind {
+  return isMeshOpKind(type);
+}
 
 export interface PortDefinition {
   id: string;
@@ -54,12 +62,31 @@ export type MeshGeneratorData = {
   settings: Record<string, number | string | boolean>;
 };
 
-export type PostProcessData = {
-  removeFloaters: boolean;
-  removeDegenerateFaces: boolean;
-  maxFaces: number | null;
-  smoothNormals: boolean;
-};
+/**
+ * A mesh op node's data is its op without the `op` key - the node type already
+ * says which op it is, so the data never contradicts the graph.
+ */
+export type MeshOpData = Record<string, unknown>;
+
+function opData(op: MeshOp): MeshOpData {
+  const data: MeshOpData = { ...op };
+  delete data['op'];
+  return data;
+}
+
+export function meshOpNodeData(kind: MeshOpKind): MeshOpData {
+  return opData(MESH_OP_DEFINITIONS[kind].defaults());
+}
+
+/** The op a node stands for, falling back to defaults rather than throwing. */
+export function meshOpFromNode(node: PipelineNode): MeshOp {
+  const kind = node.type as MeshOpKind;
+  try {
+    return normalizeMeshOp({ ...node.data, op: kind });
+  } catch {
+    return MESH_OP_DEFINITIONS[kind].defaults();
+  }
+}
 
 export type MeshExportData = {
   format: ExportFormat;
@@ -67,11 +94,29 @@ export type MeshExportData = {
   namePattern: string;
 };
 
+/** One node definition per mesh op; unlike the rest, these chain and repeat. */
+function meshOpDefinitions(): Record<MeshOpKind, NodeDefinition> {
+  const entries = MESH_OP_KINDS.map((kind): [MeshOpKind, NodeDefinition] => [
+    kind,
+    {
+      type: kind,
+      label: MESH_OP_DEFINITIONS[kind].label,
+      description: MESH_OP_DEFINITIONS[kind].description,
+      inputs: [{ id: 'mesh', label: 'Mesh', type: 'mesh' }],
+      outputs: [{ id: 'mesh', label: 'Mesh', type: 'mesh' }],
+      defaultData: () => meshOpNodeData(kind),
+      singleton: false,
+    },
+  ]);
+  return Object.fromEntries(entries) as Record<MeshOpKind, NodeDefinition>;
+}
+
 export const NODE_DEFINITIONS: Record<NodeType, NodeDefinition> = {
   'image-input': {
     type: 'image-input',
     label: 'Image Input',
-    description: 'The source image. Leave empty to pick images at generate time.',
+    description:
+      'The image every run starts from. Leave it empty to pick images at generate time, or set one here to pin the pipeline to a single image.',
     inputs: [],
     outputs: [{ id: 'image', label: 'Image', type: 'image' }],
     defaultData: (): ImageInputData => ({ imagePath: null }),
@@ -80,7 +125,8 @@ export const NODE_DEFINITIONS: Record<NodeType, NodeDefinition> = {
   'background-removal': {
     type: 'background-removal',
     label: 'Background Removal',
-    description: 'Cuts the subject out before conditioning. Strongly recommended for photos.',
+    description:
+      'Cuts the subject out of its background before the model sees it. Strongly recommended for photos — a model reads leftover background as geometry.',
     inputs: [{ id: 'image', label: 'Image', type: 'image' }],
     outputs: [{ id: 'image', label: 'Image', type: 'image' }],
     defaultData: (): BackgroundRemovalData => ({ enabled: true }),
@@ -89,7 +135,8 @@ export const NODE_DEFINITIONS: Record<NodeType, NodeDefinition> = {
   'mesh-generator': {
     type: 'mesh-generator',
     label: 'Mesh Generator',
-    description: 'Runs an image-to-3D model. Settings depend on the selected model.',
+    description:
+      'Runs an image-to-3D model and emits an untextured mesh. This is the slow step; the settings below belong to whichever model is picked.',
     inputs: [{ id: 'image', label: 'Image', type: 'image' }],
     outputs: [{ id: 'mesh', label: 'Mesh', type: 'mesh' }],
     defaultData: (): MeshGeneratorData => {
@@ -98,24 +145,11 @@ export const NODE_DEFINITIONS: Record<NodeType, NodeDefinition> = {
     },
     singleton: true,
   },
-  'post-process': {
-    type: 'post-process',
-    label: 'Post-Process',
-    description: 'Clean up floaters and degenerate faces, optionally decimate.',
-    inputs: [{ id: 'mesh', label: 'Mesh', type: 'mesh' }],
-    outputs: [{ id: 'mesh', label: 'Mesh', type: 'mesh' }],
-    defaultData: (): PostProcessData => ({
-      removeFloaters: true,
-      removeDegenerateFaces: true,
-      maxFaces: null,
-      smoothNormals: false,
-    }),
-    singleton: true,
-  },
+  ...meshOpDefinitions(),
   'mesh-export': {
     type: 'mesh-export',
     label: 'Mesh Export',
-    description: 'Writes the result into ~/.local-mesh/outputs.',
+    description: 'Writes the finished mesh into ~/.local-mesh/outputs, in the chosen format and under the chosen name.',
     inputs: [{ id: 'mesh', label: 'Mesh', type: 'mesh' }],
     outputs: [],
     defaultData: (): MeshExportData => ({ format: 'glb', namePattern: '{image}-{model}-{time}' }),
@@ -182,36 +216,111 @@ export function createNode(type: NodeType, position: { x: number; y: number }): 
   return { id: newId(type), type, position, data: NODE_DEFINITIONS[type].defaultData() };
 }
 
+/** The gap between nodes laid out automatically (default pipeline, migration). */
+const NODE_SPACING = 300;
+
+function connect(a: PipelineNode, ap: string, b: PipelineNode, bp: string): PipelineEdge {
+  return { id: newId('edge'), from: { node: a.id, port: ap }, to: { node: b.id, port: bp } };
+}
+
 /** The pipeline every fresh install gets: the full canonical chain. */
 export function createDefaultPipeline(name = 'Default', modelId?: string): Pipeline {
   const now = Date.now();
   const input = createNode('image-input', { x: 40, y: 160 });
-  const bg = createNode('background-removal', { x: 320, y: 160 });
-  const gen = createNode('mesh-generator', { x: 600, y: 120 });
-  const post = createNode('post-process', { x: 920, y: 160 });
-  const out = createNode('mesh-export', { x: 1200, y: 160 });
+  const bg = createNode('background-removal', { x: 340, y: 160 });
+  const gen = createNode('mesh-generator', { x: 640, y: 120 });
+  const floaters = createNode('remove-floaters', { x: 940, y: 160 });
+  const clean = createNode('remove-degenerate', { x: 1240, y: 160 });
+  const out = createNode('mesh-export', { x: 1540, y: 160 });
   if (modelId && getModel(modelId)) {
     gen.data = { modelId, settings: defaultModelSettings(getModel(modelId)!) };
   }
-  const edge = (a: PipelineNode, ap: string, b: PipelineNode, bp: string): PipelineEdge => ({
-    id: newId('edge'),
-    from: { node: a.id, port: ap },
-    to: { node: b.id, port: bp },
-  });
   return {
     id: newId('pipeline'),
     name,
     description: 'Image → background removal → mesh → clean-up → GLB',
     createdAt: now,
     updatedAt: now,
-    nodes: [input, bg, gen, post, out],
+    nodes: [input, bg, gen, floaters, clean, out],
     edges: [
-      edge(input, 'image', bg, 'image'),
-      edge(bg, 'image', gen, 'image'),
-      edge(gen, 'mesh', post, 'mesh'),
-      edge(post, 'mesh', out, 'mesh'),
+      connect(input, 'image', bg, 'image'),
+      connect(bg, 'image', gen, 'image'),
+      connect(gen, 'mesh', floaters, 'mesh'),
+      connect(floaters, 'mesh', clean, 'mesh'),
+      connect(clean, 'mesh', out, 'mesh'),
     ],
   };
+}
+
+// ---------------------------------------------------------------------------
+// Migration
+// ---------------------------------------------------------------------------
+
+/** What the single Post-Process node used to hold, before it was split up. */
+type LegacyPostProcessData = {
+  removeFloaters?: boolean;
+  removeDegenerateFaces?: boolean;
+  maxFaces?: number | null;
+  smoothNormals?: boolean;
+};
+
+/** The ops a legacy Post-Process node enabled, in the order it ran them. */
+function legacyOpNodes(data: LegacyPostProcessData, at: { x: number; y: number }): PipelineNode[] {
+  const kinds: MeshOpKind[] = [];
+  if (data.removeDegenerateFaces) kinds.push('remove-degenerate');
+  if (data.removeFloaters) kinds.push('remove-floaters');
+  if (data.maxFaces) kinds.push('decimate');
+  if (data.smoothNormals) kinds.push('recompute-normals');
+  return kinds.map((kind, i) => {
+    const node = createNode(kind, { x: at.x + NODE_SPACING * i, y: at.y });
+    if (kind === 'decimate') node.data = { ...node.data, mode: 'faces', maxFaces: Number(data.maxFaces) };
+    return node;
+  });
+}
+
+/**
+ * Bring a stored pipeline up to the current node vocabulary: the one
+ * Post-Process node becomes the chain of individual op nodes it had switched
+ * on, spliced into the wires it sat between. Returns the input untouched when
+ * there is nothing to do, so callers can test for a change by identity.
+ */
+export function migratePipeline(p: Pipeline): Pipeline {
+  const legacy = p.nodes.filter((n) => (n.type as string) === 'post-process');
+  if (legacy.length === 0) return p;
+
+  let nodes = p.nodes;
+  let edges = p.edges;
+  for (const node of legacy) {
+    const chain = legacyOpNodes(node.data as LegacyPostProcessData, node.position);
+    const incoming = edges.find((e) => e.to.node === node.id);
+    const outgoing = edges.filter((e) => e.from.node === node.id);
+    const shift = Math.max(0, chain.length - 1) * NODE_SPACING;
+
+    nodes = nodes
+      .filter((n) => n.id !== node.id)
+      // Keep the rest of the graph clear of the nodes that replaced this one.
+      .map((n) => (shift > 0 && n.position.x > node.position.x ? { ...n, position: { ...n.position, x: n.position.x + shift } } : n))
+      .concat(chain);
+
+    const head = chain[0];
+    const tail = chain[chain.length - 1];
+    edges = edges.filter((e) => e.from.node !== node.id && e.to.node !== node.id);
+    if (!head || !tail) {
+      // Nothing was enabled: stitch what fed the node straight to what it fed.
+      if (incoming) {
+        for (const out of outgoing) {
+          edges = [...edges, { id: newId('edge'), from: { ...incoming.from }, to: { ...out.to } }];
+        }
+      }
+      continue;
+    }
+    if (incoming) edges = [...edges, { id: newId('edge'), from: { ...incoming.from }, to: { node: head.id, port: 'mesh' } }];
+    for (let i = 1; i < chain.length; i += 1) edges = [...edges, connect(chain[i - 1]!, 'mesh', chain[i]!, 'mesh')];
+    for (const out of outgoing) {
+      edges = [...edges, { id: newId('edge'), from: { node: tail.id, port: 'mesh' }, to: { ...out.to } }];
+    }
+  }
+  return { ...p, nodes, edges };
 }
 
 // ---------------------------------------------------------------------------
@@ -231,6 +340,81 @@ function upstream(p: Pipeline, nodeId: string, port: string): PipelineNode | nul
   return p.nodes.find((n) => n.id === edge.from.node) ?? null;
 }
 
+function portOf(node: PipelineNode | undefined, id: string, side: 'inputs' | 'outputs'): PortDefinition | undefined {
+  if (!node) return undefined;
+  const def = NODE_DEFINITIONS[node.type] as NodeDefinition | undefined;
+  return def?.[side].find((port) => port.id === id);
+}
+
+/**
+ * Edges have to name real nodes and real ports, join an output to an input of
+ * the same type, and land at most one wire on any input. Without this a
+ * mistyped edge (image → mesh port) traces as a valid chain and then compiles
+ * into a job that silently skips the nodes it skipped.
+ */
+function edgeIssues(p: Pipeline): PipelineIssue[] {
+  const issues: PipelineIssue[] = [];
+  const byId = new Map(p.nodes.map((n) => [n.id, n]));
+  const taken = new Set<string>();
+  for (const edge of p.edges) {
+    const from = byId.get(edge.from.node);
+    const to = byId.get(edge.to.node);
+    if (!from || !to) {
+      issues.push({ level: 'error', message: 'A connection points at a node that is no longer there.' });
+      continue;
+    }
+    const out = portOf(from, edge.from.port, 'outputs');
+    const inp = portOf(to, edge.to.port, 'inputs');
+    if (!out || !inp) {
+      issues.push({
+        level: 'error',
+        message: `${NODE_DEFINITIONS[from.type].label} → ${NODE_DEFINITIONS[to.type].label} uses a port that does not exist.`,
+        nodeId: to.id,
+      });
+      continue;
+    }
+    if (out.type !== inp.type) {
+      issues.push({
+        level: 'error',
+        message: `${NODE_DEFINITIONS[from.type].label} (${out.type}) cannot connect to ${NODE_DEFINITIONS[to.type].label} (${inp.type}).`,
+        nodeId: to.id,
+      });
+      continue;
+    }
+    const key = `${edge.to.node}:${edge.to.port}`;
+    if (taken.has(key)) {
+      issues.push({
+        level: 'error',
+        message: `${NODE_DEFINITIONS[to.type].label} has more than one thing connected to its ${inp.label} input.`,
+        nodeId: to.id,
+      });
+      continue;
+    }
+    taken.add(key);
+  }
+  return issues;
+}
+
+/**
+ * The nodes the compiled job actually runs, walking back from mesh-export.
+ * Anything outside this set is dead weight the compiler drops.
+ */
+function reachableNodes(p: Pipeline, exportNode: PipelineNode): Set<string> {
+  const seen = new Set<string>([exportNode.id]);
+  const stack: PipelineNode[] = [exportNode];
+  while (stack.length) {
+    const node = stack.pop()!;
+    for (const port of NODE_DEFINITIONS[node.type].inputs) {
+      const up = upstream(p, node.id, port.id);
+      if (up && !seen.has(up.id)) {
+        seen.add(up.id);
+        stack.push(up);
+      }
+    }
+  }
+  return seen;
+}
+
 /**
  * Walk backwards from mesh-export and collect the chain. Returns issues for
  * anything that would stop a job being built. Pure: safe in both processes.
@@ -244,6 +428,8 @@ export function validatePipeline(p: Pipeline): PipelineIssue[] {
       issues.push({ level: 'error', message: `Only one ${def.label} node is allowed.` });
     }
   }
+  issues.push(...edgeIssues(p));
+
   const exportNode = byType('mesh-export')[0];
   const genNode = byType('mesh-generator')[0];
   const inputNode = byType('image-input')[0];
@@ -257,7 +443,7 @@ export function validatePipeline(p: Pipeline): PipelineIssue[] {
     issues.push({ level: 'error', message: 'Mesh Generator has no model selected.', nodeId: genNode.id });
   }
 
-  // Trace the mesh chain: export ← (post-process)* ← generator
+  // Trace the mesh chain: export ← (mesh op)* ← generator
   let cursor: PipelineNode | null = exportNode;
   let guard = 0;
   while (cursor && cursor.type !== 'mesh-generator' && guard++ < 32) {
@@ -290,7 +476,18 @@ export function validatePipeline(p: Pipeline): PipelineIssue[] {
     issues.push({ level: 'error', message: 'Mesh Generator is not connected to the Image Input.' });
   }
 
-  if (!byType('background-removal').some((n) => (n.data as BackgroundRemovalData).enabled)) {
+  const reachable = reachableNodes(p, exportNode);
+  for (const node of p.nodes) {
+    if (reachable.has(node.id)) continue;
+    issues.push({
+      level: 'warning',
+      message: `${NODE_DEFINITIONS[node.type].label} is not wired into the chain and will be ignored.`,
+      nodeId: node.id,
+    });
+  }
+
+  const bg = byType('background-removal')[0];
+  if (!bg || !reachable.has(bg.id) || !(bg.data as BackgroundRemovalData).enabled) {
     issues.push({ level: 'warning', message: 'No background removal: photos with backgrounds will generate poorly.' });
   }
   return issues;
@@ -325,6 +522,27 @@ function pad(n: number, w = 2): string {
 }
 
 /**
+ * The op nodes between the generator and `exportNode`, in the order the mesh
+ * flows through them. The chain is validated by then, so the walk always
+ * terminates at the generator.
+ */
+function meshOpChain(p: Pipeline, exportNode: PipelineNode): MeshOp[] {
+  const ops: MeshOp[] = [];
+  let cursor: PipelineNode | null = upstream(p, exportNode.id, 'mesh');
+  let guard = 0;
+  while (cursor && cursor.type !== 'mesh-generator' && guard++ < 32) {
+    if (isMeshOpNodeType(cursor.type)) ops.unshift(meshOpFromNode(cursor));
+    cursor = upstream(p, cursor.id, NODE_DEFINITIONS[cursor.type].inputs[0]?.id ?? 'mesh');
+  }
+  // Never hand the worker a half-walked chain: validation bounds the walk the
+  // same way, so reaching this means the graph changed underneath us.
+  if (!cursor || cursor.type !== 'mesh-generator') {
+    throw new Error('The mesh chain between the Mesh Generator and Mesh Export is broken or too long.');
+  }
+  return ops;
+}
+
+/**
  * Fold a validated pipeline into a worker job. Throws on validation errors,
  * so call validatePipeline() first in the UI and treat a throw here as a bug.
  */
@@ -341,28 +559,28 @@ export function compilePipeline(p: Pipeline, ctx: CompileContext): GenerationJob
   };
   settings['seed'] = ctx.seed;
 
-  const bgNode = p.nodes.find((n) => n.type === 'background-removal');
+  const exportNode = p.nodes.find((n) => n.type === 'mesh-export')!;
+  // Only a node the mesh/image actually flows through counts: a detached
+  // Background Removal node left lying on the canvas must not affect the job.
+  const reachable = reachableNodes(p, exportNode);
+  const bgNode = p.nodes.find((n) => n.type === 'background-removal' && reachable.has(n.id));
   const removeBackground = bgNode ? Boolean((bgNode.data as BackgroundRemovalData).enabled) : false;
 
-  const postNode = p.nodes.find((n) => n.type === 'post-process');
-  const postDefaults = NODE_DEFINITIONS['post-process'].defaultData() as PostProcessData;
-  const postProcess: PostProcessSpec = postNode
-    ? { ...postDefaults, ...(postNode.data as Partial<PostProcessData>) }
-    : { removeFloaters: false, removeDegenerateFaces: false, maxFaces: null, smoothNormals: false };
-
-  const exportNode = p.nodes.find((n) => n.type === 'mesh-export')!;
+  const postProcess = meshOpChain(p, exportNode);
   const exportData = { ...(NODE_DEFINITIONS['mesh-export'].defaultData() as MeshExportData), ...(exportNode.data as Partial<MeshExportData>) };
   const d = ctx.now;
-  const baseName = slug(
-    exportData.namePattern
-      .replace('{image}', ctx.imageStem)
-      .replace('{model}', model.id)
-      .replace('{pipeline}', ctx.pipelineName)
-      .replace('{date}', `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`)
-      .replace('{time}', `${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`)
-      .replace('{seed}', String(ctx.seed))
-      .replace('{n}', pad(ctx.index + 1))
-  );
+  const tokens: Record<string, string> = {
+    image: ctx.imageStem,
+    model: model.id,
+    pipeline: ctx.pipelineName,
+    date: `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`,
+    time: `${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`,
+    seed: String(ctx.seed),
+    n: pad(ctx.index + 1),
+  };
+  // A function replacement, so every occurrence is substituted and a `$` in an
+  // image name is never read as a replacement pattern.
+  const baseName = slug(exportData.namePattern.replace(/\{(\w+)\}/g, (match, key: string) => tokens[key] ?? match));
 
   return {
     jobId: ctx.jobId,

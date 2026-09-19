@@ -4,10 +4,11 @@ import path from 'node:path';
 import { BrowserWindow } from 'electron';
 import { IPC_CHANNELS } from '../core/types';
 import type { EnvPhase, EnvProgressEvent, EnvStatus } from '../core/types';
-import { log } from './logger';
+import { formatBytes, plural, since } from './format';
+import { log, reported } from './logger';
 import { getPaths, getRembgDir } from './paths';
 import { CancelledError, errorMessage, isCancelled, runCapture, spawnLines } from './proc';
-import type { ChildProcess } from 'node:child_process';
+import type { LineProcess } from './proc';
 
 /**
  * The uv-managed Python environment: venv creation, torch + base deps and a
@@ -181,7 +182,7 @@ interface ProbeResult {
 }
 
 interface SetupRun {
-  child: ChildProcess | null;
+  proc: LineProcess | null;
   cancelled: boolean;
 }
 
@@ -190,7 +191,9 @@ let setupRun: SetupRun | null = null;
 let currentPhase: EnvPhase = 'idle';
 let lastError: string | null = null;
 let probeCache: { at: number; result: ProbeResult | null } | null = null;
-let probeInFlight: Promise<ProbeResult | null> | null = null;
+let probeInFlight: { generation: number; promise: Promise<ProbeResult | null> } | null = null;
+/** Bumped by invalidateProbe; a probe from an earlier generation is discarded. */
+let probeGeneration = 0;
 let uvPathCache: string | null = null;
 
 /** The bundled resources/python directory the worker and requirements are read from. */
@@ -225,6 +228,42 @@ export function envExists(): boolean {
 /** Cheap synchronous check used before spawning anything from the env. */
 export function isEnvUsable(): boolean {
   return envExists();
+}
+
+/**
+ * Per-model dependency marker, written next to a model's weights by
+ * modelManager and cleared here when the env goes away. Lives with the model
+ * rather than in the venv, so `installState` has to cross-check it against
+ * `envExists()` — see `removeEnv`.
+ */
+export const DEPS_MARKER = '.deps-installed';
+
+/**
+ * Model dependency installs currently running (id → display name).
+ *
+ * `uv pip install` from modelManager writes into the same venv setup owns, so
+ * removal has to be refused while one is in flight or it deletes the venv out
+ * from under a running install. modelManager registers here rather than
+ * envManager importing modelManager, which would be a cycle.
+ */
+const depsInstalls = new Map<string, string>();
+
+export function beginDepsInstall(modelId: string, name: string): void {
+  depsInstalls.set(modelId, name);
+}
+
+export function endDepsInstall(modelId: string): void {
+  depsInstalls.delete(modelId);
+}
+
+/** Anything that is mutating the env right now, named for an error message. */
+export function envBusyReason(): string | null {
+  if (setupRun) return 'setup is running';
+  const installing = [...depsInstalls.values()];
+  if (installing.length > 0) {
+    return `${installing.join(', ')} ${installing.length > 1 ? 'are' : 'is'} installing dependencies`;
+  }
+  return null;
 }
 
 /** Version of the bundled python scripts; deps markers are keyed on it. */
@@ -271,27 +310,41 @@ export async function requireUv(): Promise<string> {
 
 export function invalidateProbe(): void {
   probeCache = null;
+  // A probe already running describes the environment as it was, not as it is.
+  // Dropping it matters most during setup: a status poll that started while
+  // torch was still installing would otherwise be handed back as setup's own
+  // verification, and a good install would read as "torch failed to import".
+  probeGeneration += 1;
+  probeInFlight = null;
 }
 
 async function probeEnv(): Promise<ProbeResult | null> {
   if (!envExists()) return null;
   if (probeCache && Date.now() - probeCache.at < PROBE_TTL_MS) return probeCache.result;
-  if (probeInFlight) return probeInFlight;
-  probeInFlight = (async () => {
+  if (probeInFlight) return probeInFlight.promise;
+  const generation = probeGeneration;
+  const promise = (async () => {
     let result: ProbeResult | null = null;
     try {
       const r = await runCapture(envPython(), ['-c', PROBE_SCRIPT], { timeoutMs: 60_000 });
       const line = r.stdout.trim().split('\n').pop() ?? '';
       if (r.code === 0 && line.startsWith('{')) result = JSON.parse(line) as ProbeResult;
-      else elog.warn(`env probe failed (exit ${r.code}${r.timedOut ? ', timed out' : ''}): ${r.stderr.trim().slice(-400)}`);
+      else
+        elog.warn(
+          `could not read the environment (python exited ${r.code}${r.timedOut ? ' after timing out' : ''}); ` +
+            `re-run Setup in the Models view if this persists: ${r.stderr.trim().slice(-400)}`
+        );
     } catch (err) {
-      elog.warn(`env probe could not run: ${errorMessage(err)}`);
+      elog.warn(`could not run the environment probe: ${errorMessage(err)}`);
     }
-    probeCache = { at: Date.now(), result };
-    probeInFlight = null;
+    if (generation === probeGeneration) {
+      probeCache = { at: Date.now(), result };
+      probeInFlight = null;
+    }
     return result;
   })();
-  return probeInFlight;
+  probeInFlight = { generation, promise };
+  return promise;
 }
 
 /**
@@ -328,21 +381,26 @@ async function prefetchRembgModel(): Promise<void> {
   const home = getRembgDir();
   fs.mkdirSync(home, { recursive: true });
   const script = `from rembg import new_session; new_session(${JSON.stringify(REMBG_MODEL)})`;
+  const startedAt = Date.now();
   try {
     const r = await runCapture(envPython(), ['-c', script], {
       timeoutMs: REMBG_PREFETCH_TIMEOUT_MS,
       env: { U2NET_HOME: home },
     });
     if (r.code === 0) {
-      elog.info(`rembg ${REMBG_MODEL} model ready in ${home}`);
+      elog.info(`background-removal model ${REMBG_MODEL} ready in ${since(startedAt)}`);
       return;
     }
     elog.warn(
-      `could not pre-fetch the rembg ${REMBG_MODEL} model (exit ${r.code}${r.timedOut ? ', timed out' : ''}); ` +
-        `the first generation will download it: ${r.stderr.trim().slice(-400)}`
+      `could not pre-fetch the ${REMBG_MODEL} background-removal model (exit ${r.code}` +
+        `${r.timedOut ? ', timed out' : ''}); the first generation will download it, which may stall it: ` +
+        `${r.stderr.trim().slice(-400)}`
     );
   } catch (err) {
-    elog.warn(`could not pre-fetch the rembg ${REMBG_MODEL} model: ${errorMessage(err)}`);
+    elog.warn(
+      `could not pre-fetch the ${REMBG_MODEL} background-removal model: ${errorMessage(err)}; ` +
+        'the first generation will download it'
+    );
   }
 }
 
@@ -389,7 +447,11 @@ async function runStep(
 ): Promise<void> {
   if (run.cancelled) throw new CancelledError();
   emit({ phase, pct: range[0], message });
-  elog.info(`${message}: ${cmd} ${args.join(' ')}`);
+  elog.info(`${message}…`);
+  // The exact command is what makes a failed install reproducible, but it is a
+  // wall of absolute paths: keep it in the file, out of the user's timeline.
+  elog.debug(`$ ${cmd} ${args.join(' ')}`);
+  const startedAt = Date.now();
   let lines = 0;
   const recent: string[] = [];
   const onLine = (line: string) => {
@@ -401,34 +463,38 @@ async function runStep(
     emit({ phase, pct: creep(range[0], range[1], lines), message, line });
   };
   const proc = spawnLines(cmd, args, { onStdout: onLine, onStderr: onLine });
-  run.child = proc.child;
+  run.proc = proc;
   const { code } = await proc.exited;
-  run.child = null;
+  run.proc = null;
   if (run.cancelled) throw new CancelledError();
   if (code !== 0) {
     throw new Error(`${message} failed (exit ${code}).${recent.length ? `\n${recent.join('\n')}` : ''}`);
   }
+  elog.info(`${message} finished in ${since(startedAt)}`);
 }
 
 export async function setupEnv(): Promise<void> {
   if (setupRun) throw new Error('Environment setup is already running.');
-  const run: SetupRun = { child: null, cancelled: false };
+  const run: SetupRun = { proc: null, cancelled: false };
   setupRun = run;
   lastError = null;
   const paths = getPaths();
   const manifest = readManifest();
   const python = envPython();
   const bundled = bundledPythonDir();
+  const setupStartedAt = Date.now();
   try {
+    elog.info(`environment setup starting (scripts ${scriptsVersion()}, target ${paths.env})`);
     emit({ phase: 'checking', pct: 0, message: 'Looking for uv' });
     const uv = await requireUv();
+    elog.debug(`uv: ${uv}`);
     if (!fs.existsSync(path.join(bundled, manifest.baseRequirements))) {
       throw new Error(`Bundled requirements are missing: ${path.join(bundled, manifest.baseRequirements)}`);
     }
 
     if (envExists()) {
       emit({ phase: 'creating-venv', pct: 5, message: 'Reusing existing virtualenv' });
-      elog.info(`venv already present at ${paths.env}`);
+      elog.info('reusing the existing virtualenv');
     } else {
       // A leftover dir without a python binary would make uv ask whether to overwrite.
       fs.rmSync(paths.env, { recursive: true, force: true });
@@ -440,7 +506,8 @@ export async function setupEnv(): Promise<void> {
     const gpu = await detectGpu();
     const variant = pickTorchVariant(manifest.torch.variants, gpu);
     elog.info(
-      `torch variant "${variant.name}" for ${gpu ? `${gpu.name} (compute ${gpu.computeCap})` : 'no NVIDIA GPU'}`
+      `${gpu ? `detected ${gpu.name} (compute ${gpu.computeCap})` : 'no NVIDIA GPU detected (nvidia-smi found nothing)'}` +
+        `; installing the "${variant.name}" torch build`
     );
     await runStep(run, 'installing-torch', [8, 70], `Installing PyTorch (${variant.name})`, uv, [
       'pip', 'install', '--python', python, ...variant.packages,
@@ -463,19 +530,22 @@ export async function setupEnv(): Promise<void> {
     if (run.cancelled) throw new CancelledError();
 
     elog.info(
-      `environment ready: python ${probe.python}, torch ${probe.torch}, cuda ${probe.cuda}${probe.gpu ? ` (${probe.gpu})` : ''}`
+      `environment ready in ${since(setupStartedAt)}: python ${probe.python}, torch ${probe.torch}, ` +
+        `cuda ${probe.cuda}${probe.gpu ? ` (${probe.gpu})` : ''}` +
+        `${probe.vram ? `, ${formatBytes(probe.vram)} vram` : ''}`
     );
     emit({ phase: 'done', pct: 100, message: 'Environment ready' });
   } catch (err) {
     if (isCancelled(err) || run.cancelled) {
-      elog.warn('environment setup cancelled');
+      // The user asked for this; nothing is broken.
+      elog.info(`environment setup cancelled after ${since(setupStartedAt)}`);
       emit({ phase: 'cancelled', pct: 0, message: 'Setup cancelled' });
       return;
     }
     lastError = errorMessage(err);
-    elog.error(`environment setup failed: ${lastError}`);
+    elog.error(`environment setup failed after ${since(setupStartedAt)}: ${lastError}`);
     emit({ phase: 'failed', pct: 0, message: lastError });
-    throw new Error(lastError);
+    throw reported(new Error(lastError));
   } finally {
     setupRun = null;
     invalidateProbe();
@@ -487,7 +557,9 @@ export async function setupEnv(): Promise<void> {
 export function cancelEnvSetup(): void {
   if (!setupRun) return;
   setupRun.cancelled = true;
-  setupRun.child?.kill('SIGTERM');
+  elog.info(`cancelling environment setup during "${currentPhase}"`);
+  // The group, so uv's own children (the pip resolver) go with it.
+  setupRun.proc?.kill('SIGTERM');
 }
 
 /** Kill any in-flight setup child (app quit). */
@@ -496,18 +568,26 @@ export function killEnvChildren(): void {
 }
 
 export function removeEnv(): void {
-  if (setupRun) throw new Error('Cannot remove the environment while setup is running.');
+  const busy = envBusyReason();
+  if (busy) throw new Error(`Cannot remove the environment while ${busy}. Cancel that first.`);
   const paths = getPaths();
   fs.rmSync(paths.env, { recursive: true, force: true });
-  // Per-model deps live in the venv, so their markers are stale now.
+  // Per-model deps live in the venv, so their markers are stale now. (installState
+  // also refuses to read a marker with no env, which covers an env deleted from
+  // outside the app; this keeps the on-disk state honest as well.)
+  let cleared = 0;
   try {
     for (const entry of fs.readdirSync(paths.models)) {
-      fs.rmSync(path.join(paths.models, entry, '.deps-installed'), { force: true });
+      const marker = path.join(paths.models, entry, DEPS_MARKER);
+      if (fs.existsSync(marker)) cleared += 1;
+      fs.rmSync(marker, { force: true });
     }
   } catch {
     // No models dir yet.
   }
   invalidateProbe();
   lastError = null;
-  elog.info('environment removed (env/, model dependency markers)');
+  elog.info(
+    `environment removed; ${plural(cleared, 'model')} must reinstall dependencies (weights are untouched)`
+  );
 }

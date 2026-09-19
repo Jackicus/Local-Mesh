@@ -63,7 +63,7 @@ class Backend(BaseBackend):
                 f"{checkpoint} is missing; re-download the model from the Models view")
 
         self._release()
-        self.log("info", f"loading {SUBFOLDER} from {self.model_dir}")
+        self.log("info", f"weights subfolder: {SUBFOLDER}")
         pipeline = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(
             self.model_dir,
             subfolder=SUBFOLDER,

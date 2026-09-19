@@ -25,7 +25,7 @@ interface LogRowProps {
 export const LogRow = React.memo<LogRowProps>(({ entry, showJob }) => (
   <div className={`logs-row logs-row-${entry.level}`}>
     <span className="logs-time">{formatTime(entry.ts)}</span>
-    <span className={`logs-level logs-level-${entry.level}`}>{entry.level.slice(0, 4)}</span>
+    <span className="logs-level">{entry.level.slice(0, 4)}</span>
     <span className="logs-source">{entry.source}</span>
     {showJob && (
       <span className="logs-job" title={entry.jobId}>
@@ -37,9 +37,3 @@ export const LogRow = React.memo<LogRowProps>(({ entry, showJob }) => (
 ));
 
 LogRow.displayName = 'LogRow';
-
-export const LogDivider: React.FC<{ jobId: string | undefined }> = ({ jobId }) => (
-  <div className="logs-divider">
-    <span>{jobId ? `job ${shortJobId(jobId)}` : 'no job'}</span>
-  </div>
-);

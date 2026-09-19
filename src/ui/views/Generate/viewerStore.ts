@@ -1,5 +1,5 @@
 import type * as THREE from 'three';
-import type { GenerationJob } from '../../../core/types';
+import type { GenerationJob, MeshOpKind } from '../../../core/types';
 import { api, createStore, useStore } from '../../stores/createStore';
 import { toast } from '../../components/Toast/toastStore';
 import { disposeObject, parseMeshBytes } from './meshLoader';
@@ -7,9 +7,9 @@ import { fileBaseName, fileExtension } from './format';
 
 /**
  * View-local state for the Generate screen: what the viewport shows, the
- * viewer toggles, the dock, and the images waiting to be queued. Lives in a
- * module (not component state) so navigating away and back keeps the loaded
- * mesh — the three.js object is retained here and re-attached on mount.
+ * viewer toggles, and the images waiting to be queued. Lives in a module (not
+ * component state) so navigating away and back keeps the loaded mesh — the
+ * three.js object is retained here and re-attached on mount.
  */
 export interface LoadedMesh {
   path: string;
@@ -25,7 +25,6 @@ export interface ViewerState {
   showGrid: boolean;
   wireframe: boolean;
   autoRotate: boolean;
-  dockOpen: boolean;
   /** Absolute paths of source images picked or dropped, not yet queued. */
   images: string[];
   /**
@@ -36,8 +35,15 @@ export interface ViewerState {
   /** Bumped when a tool writes a new file, so the outputs list knows to re-read. */
   outputsRevision: number;
   /** Which mesh tool is mid-run; mirrored in the HUD until main reports progress. */
-  toolBusy: 'reduce' | 'smooth' | 'undo' | null;
+  toolBusy: MeshOpKind | 'undo' | null;
 }
+
+/**
+ * The camera's orientation as a quaternion (x, y, z, w). Published every
+ * rendered frame for the navigation gizmo, outside the store so an orbit
+ * doesn't re-render the view sixty times a second.
+ */
+export type CameraPose = readonly [number, number, number, number];
 
 /** What the mounted scene exposes; registered by useThreeScene. */
 export interface SceneController {
@@ -46,11 +52,13 @@ export interface SceneController {
   setGrid(on: boolean): void;
   setWireframe(on: boolean): void;
   setAutoRotate(on: boolean): void;
+  /** Swing the camera onto a world axis, keeping its distance and target. */
+  snapToAxis(x: number, y: number, z: number): void;
 }
 
-type Prefs = Pick<ViewerState, 'showGrid' | 'wireframe' | 'autoRotate' | 'dockOpen'>;
+type Prefs = Pick<ViewerState, 'showGrid' | 'wireframe' | 'autoRotate'>;
 const PREFS_KEY = 'local-mesh:generate-viewer';
-const DEFAULT_PREFS: Prefs = { showGrid: true, wireframe: false, autoRotate: false, dockOpen: true };
+const DEFAULT_PREFS: Prefs = { showGrid: true, wireframe: false, autoRotate: false };
 
 function readPrefs(): Prefs {
   try {
@@ -58,7 +66,7 @@ function readPrefs(): Prefs {
     if (!raw) return DEFAULT_PREFS;
     const parsed = JSON.parse(raw) as Partial<Record<keyof Prefs, unknown>>;
     const pick = (k: keyof Prefs) => (typeof parsed[k] === 'boolean' ? (parsed[k] as boolean) : DEFAULT_PREFS[k]);
-    return { showGrid: pick('showGrid'), wireframe: pick('wireframe'), autoRotate: pick('autoRotate'), dockOpen: pick('dockOpen') };
+    return { showGrid: pick('showGrid'), wireframe: pick('wireframe'), autoRotate: pick('autoRotate') };
   } catch {
     return DEFAULT_PREFS;
   }
@@ -66,7 +74,7 @@ function readPrefs(): Prefs {
 
 function writePrefs(s: ViewerState) {
   try {
-    const prefs: Prefs = { showGrid: s.showGrid, wireframe: s.wireframe, autoRotate: s.autoRotate, dockOpen: s.dockOpen };
+    const prefs: Prefs = { showGrid: s.showGrid, wireframe: s.wireframe, autoRotate: s.autoRotate };
     localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
   } catch {}
 }
@@ -84,6 +92,12 @@ const store = createStore<ViewerState>({
 let controller: SceneController | null = null;
 let currentObject: THREE.Object3D | null = null;
 let loadToken = 0;
+
+// Camera orientation channel. Kept off the store deliberately: the gizmo is
+// the only reader and it writes straight to the DOM, so an orbit costs no
+// React work at all.
+let cameraPose: CameraPose = [0, 0, 0, 1];
+const poseListeners = new Set<(pose: CameraPose) => void>();
 
 // Auto-load bookkeeping: jobs already finished when the view first sees the
 // queue are seeded as "seen" so a restart doesn't replay old results.
@@ -138,9 +152,13 @@ export const viewerStore = {
         disposeObject(parsed.object);
         return;
       }
-      if (currentObject) disposeObject(currentObject);
+      // Hand the new object to the scene before freeing the old one: three
+      // keeps rendering whatever is still in the graph, and a disposed
+      // geometry that is still attached draws with dead GPU buffers.
+      const previous = currentObject;
       currentObject = parsed.object;
       controller?.setObject(currentObject);
+      if (previous) disposeObject(previous);
       store.setState((prev) => ({
         loaded: { path, name: fileBaseName(path), vertices: parsed.vertices, faces: parsed.faces },
         loading: null,
@@ -155,9 +173,10 @@ export const viewerStore = {
 
   clear() {
     loadToken += 1;
-    if (currentObject) disposeObject(currentObject);
+    const previous = currentObject;
     currentObject = null;
     controller?.setObject(null);
+    if (previous) disposeObject(previous);
     store.setState({ loaded: null, loading: null, history: [] });
   },
 
@@ -192,6 +211,24 @@ export const viewerStore = {
 
   resetCamera: () => controller?.resetCamera(),
 
+  /** Snap the camera onto a world axis; the gizmo's handles are the callers. */
+  snapToAxis: (x: number, y: number, z: number) => controller?.snapToAxis(x, y, z),
+
+  /** Called by the scene after every render it draws. */
+  publishCameraPose(pose: CameraPose) {
+    cameraPose = pose;
+    poseListeners.forEach((listener) => listener(pose));
+  },
+
+  /** Fires on every camera move, and once immediately with the current pose. */
+  subscribeCameraPose(listener: (pose: CameraPose) => void): () => void {
+    poseListeners.add(listener);
+    listener(cameraPose);
+    return () => {
+      poseListeners.delete(listener);
+    };
+  },
+
   setGrid(on: boolean) {
     setPref('showGrid', on);
     controller?.setGrid(on);
@@ -204,7 +241,6 @@ export const viewerStore = {
     setPref('autoRotate', on);
     controller?.setAutoRotate(on);
   },
-  setDockOpen: (open: boolean) => setPref('dockOpen', open),
 
   addImages(paths: string[]) {
     store.setState((prev) => ({ images: [...prev.images, ...paths.filter((p) => !prev.images.includes(p))] }));

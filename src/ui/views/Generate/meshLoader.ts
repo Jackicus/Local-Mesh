@@ -4,8 +4,6 @@ import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
 import { PLYLoader } from 'three/examples/jsm/loaders/PLYLoader.js';
 
-export const SUPPORTED_MESH_EXTENSIONS = ['glb', 'gltf', 'obj', 'stl', 'ply'] as const;
-
 export interface ParsedMesh {
   /** Normalised: centred on the origin, largest dimension 2 units, resting on y = 0. */
   object: THREE.Group;

@@ -1,4 +1,13 @@
 /** Small formatting helpers shared by the Generate view's overlays and lists. */
+import { isMeshOpKind, MESH_OP_DEFINITIONS } from '../../../core/types';
+
+/**
+ * Worker stages are machine ids ("decode", "remove-floaters"); the mesh ops
+ * among them get the label the toolbar uses for the same thing.
+ */
+export function stageLabel(stage: string): string {
+  return isMeshOpKind(stage) ? MESH_OP_DEFINITIONS[stage].short : stage;
+}
 
 export function formatBytes(n: number): string {
   if (!Number.isFinite(n) || n < 0) return '—';
@@ -11,21 +20,6 @@ export function formatBytes(n: number): string {
     i += 1;
   }
   return `${v < 10 ? v.toFixed(1) : Math.round(v)} ${units[i]}`;
-}
-
-/** Gigabytes with one decimal, for the VRAM readouts ("5.3"). */
-export function formatGb(bytes: number | null | undefined): string {
-  if (bytes == null || !Number.isFinite(bytes)) return '—';
-  return (bytes / 1024 ** 3).toFixed(1);
-}
-
-export function formatDuration(ms: number): string {
-  if (!Number.isFinite(ms) || ms < 0) return '—';
-  const s = ms / 1000;
-  if (s < 60) return `${s < 10 ? s.toFixed(1) : Math.round(s)}s`;
-  const m = Math.floor(s / 60);
-  const rest = Math.round(s - m * 60);
-  return `${m}m ${rest.toString().padStart(2, '0')}s`;
 }
 
 /**

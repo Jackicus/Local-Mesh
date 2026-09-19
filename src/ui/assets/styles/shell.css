@@ -258,7 +258,7 @@
     padding-right: 12px;
   }
 
-  /* Unseen-error count on the Logs row */
+  /* Unseen errors on the Logs row — a quiet count, not an alarm */
   .dock-item-badge {
     flex-shrink: 0;
     display: inline-flex;
@@ -269,8 +269,9 @@
     margin-right: 10px;
     padding: 0 5px;
     border-radius: 9px;
-    background-color: var(--danger);
-    color: #ffffff;
+    background-color: var(--danger-subtle);
+    border: 1px solid oklch(from var(--danger) l c h / 0.3);
+    color: var(--danger);
     font-family: var(--font-mono);
     font-size: 0.714rem;
     font-weight: 600;
@@ -285,6 +286,201 @@
     flex-direction: column;
     gap: 4px;
     overflow: hidden;
+  }
+
+  /* --------------------------------------------------------------------------
+     Engine (above Logs)
+
+     The same kind of thing as the Logs row below it: a standing readout of
+     what the app is doing off-screen, plus the one control that readout
+     implies. It keeps the dock items' 44px icon gutter, so the model name and
+     the meter hang off the same left edge as every label in the dock.
+     -------------------------------------------------------------------------- */
+  .dock-engine {
+    display: flex;
+    flex-direction: column;
+    padding-bottom: 8px;
+    margin-bottom: 4px;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .dock-engine-head {
+    display: flex;
+    align-items: center;
+    height: 38px;
+    color: var(--text-secondary);
+  }
+
+  .dock-engine-title {
+    font-size: 0.929rem;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  /* The word stays in the neutral ramp; the dot alone carries the state. */
+  .dock-engine-state {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+    margin-right: 10px;
+    font-family: var(--font-mono);
+    font-size: 0.714rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+
+  .dock-engine-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background-color: var(--text-muted);
+  }
+
+  .dock-engine-state.is-accent .dock-engine-dot {
+    background-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-subtle);
+    animation: dock-engine-pulse 1.6s ease-in-out infinite;
+  }
+
+  .dock-engine-state.is-success .dock-engine-dot {
+    background-color: var(--success);
+  }
+
+  .dock-engine-state.is-warning .dock-engine-dot {
+    background-color: var(--warning);
+    animation: dock-engine-pulse 1.6s ease-in-out infinite;
+  }
+
+  .dock-engine-state.is-danger .dock-engine-dot {
+    background-color: var(--danger);
+  }
+
+  @keyframes dock-engine-pulse {
+    50% {
+      opacity: 0.35;
+    }
+  }
+
+  .dock-engine-body {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 0 10px 0 44px;
+    min-width: 0;
+  }
+
+  .dock-engine-model {
+    font-size: 0.857rem;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .dock-meter {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .dock-meter-track {
+    flex: 1;
+    min-width: 24px;
+    height: 4px;
+    border-radius: 999px;
+    background-color: var(--bg-surface-active);
+    overflow: hidden;
+  }
+
+  .dock-meter-fill {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background-color: var(--accent);
+    transition: width var(--transition-base);
+  }
+
+  .dock-meter-track.is-warning .dock-meter-fill {
+    background-color: var(--warning);
+  }
+
+  .dock-meter-track.is-danger .dock-meter-fill {
+    background-color: var(--danger);
+  }
+
+  .dock-meter-figure {
+    font-family: var(--font-mono);
+    font-size: 0.714rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-secondary);
+    white-space: nowrap;
+  }
+
+  .dock-engine-meta {
+    font-family: var(--font-mono);
+    font-size: 0.714rem;
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .dock-engine-error {
+    font-size: 0.786rem;
+    line-height: 1.4;
+    color: var(--danger);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .dock-engine-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 2px;
+  }
+
+  .dock-engine-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 26px;
+    padding: 0 9px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    background-color: var(--bg-surface-hover);
+    color: var(--text-secondary);
+    font-size: 0.786rem;
+    font-weight: 500;
+    white-space: nowrap;
+    transition: background-color var(--transition-fast), color var(--transition-fast);
+  }
+
+  .dock-engine-btn:hover:not(:disabled) {
+    background-color: var(--bg-surface-active);
+    color: var(--text-primary);
+  }
+
+  .dock-engine-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .dock-engine-btn.is-icon {
+    padding: 0 7px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .dock-engine-state .dock-engine-dot {
+      animation: none;
+    }
   }
 
   /* --------------------------------------------------------------------------
@@ -321,7 +517,8 @@
 
   /* --------------------------------------------------------------------------
      Bottom Log Dock (an overlay over the content area, not a layout column —
-     full-bleed views keep their 100vh when it opens)
+     full-bleed views keep their 100vh when it opens). Closed it is not
+     rendered at all: no strip, nothing reserved at the bottom of the content.
      -------------------------------------------------------------------------- */
   .bottom-dock {
     position: absolute;
@@ -337,72 +534,20 @@
     backdrop-filter: blur(12px);
     border-top: 1px solid var(--border-subtle);
     box-shadow: 0 -8px 28px oklch(0% 0 0 / 0.18);
-    transition: height var(--transition-base), left var(--transition-base);
-    will-change: height;
+    transition: left var(--transition-base);
+    /* Mounted on open, so it arrives rather than growing out of a strip */
+    animation: bottom-dock-in var(--transition-base) both;
   }
 
   .bottom-dock.is-resizing {
     transition: none !important;
   }
 
-  /* The collapsed bar is wrapped by its Tooltip; let the wrapper carry the strip */
-  .bottom-dock > .ui-tooltip-wrapper {
-    flex: 1;
-    min-height: 0;
-  }
-
-  /* Collapsed: one strip of counts, the whole thing a button */
-  .bottom-dock-bar {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    width: 100%;
-    height: 100%;
-    padding: 0 12px;
-    background: none;
-    color: var(--text-muted);
-    font-family: var(--font-mono);
-    font-size: 0.688rem;
-    letter-spacing: 0.09em;
-    text-transform: uppercase;
-    cursor: pointer;
-    transition: color var(--transition-fast), background-color var(--transition-fast);
-  }
-
-  .bottom-dock-bar:hover {
-    background-color: var(--bg-surface-hover);
-    color: var(--text-secondary);
-  }
-
-  .bottom-dock-brand {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    font-weight: 600;
-    color: var(--text-secondary);
-  }
-
-  .bottom-dock-stat {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-  }
-
-  .bottom-dock-stat b {
-    font-weight: 600;
-    color: var(--text-secondary);
-    font-variant-numeric: tabular-nums;
-  }
-
-  .bottom-dock-stat.is-danger,
-  .bottom-dock-stat.is-danger b {
-    color: var(--danger);
-  }
-
-  .bottom-dock-chevron {
-    margin-left: auto;
-    display: inline-flex;
-    align-items: center;
+  @keyframes bottom-dock-in {
+    from {
+      transform: translateY(8px);
+      opacity: 0;
+    }
   }
 
   /* Same grab technique as the left dock's resizer, on the top edge */

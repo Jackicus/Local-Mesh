@@ -41,6 +41,32 @@ export function sanitizeSettings(raw: unknown, base: AppSettings = DEFAULT_SETTI
   };
 }
 
+/**
+ * Write JSON where a crash can only ever leave the old file or the new one.
+ * The rename is the atomic part, but only once the bytes are actually on the
+ * platter: without the fsync, a power loss just after a rename can leave a
+ * zero-length settings.json behind on ext4/btrfs. The temp name carries a
+ * unique suffix so two writers cannot truncate each other's staging file.
+ *
+ * Shared with pipelines.ts, the other place that persists user JSON.
+ */
+export function writeJsonAtomic(file: string, value: unknown): void {
+  const tmp = `${file}.${process.pid}.${Date.now().toString(36)}.tmp`;
+  try {
+    const fd = fs.openSync(tmp, 'w');
+    try {
+      fs.writeFileSync(fd, `${JSON.stringify(value, null, 2)}\n`, 'utf-8');
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
+    fs.renameSync(tmp, file);
+  } catch (err) {
+    fs.rmSync(tmp, { force: true });
+    throw err;
+  }
+}
+
 function load(): AppSettings {
   try {
     const text = fs.readFileSync(getSettingsPath(), 'utf-8');
@@ -59,12 +85,18 @@ export function getSettings(): AppSettings {
 }
 
 export function setSettings(patch: Partial<AppSettings>): AppSettings {
-  const next = sanitizeSettings(patch, getSettings());
+  const previous = getSettings();
+  const next = sanitizeSettings(patch, previous);
+  // Cache only what reached disk: a failed write that had already updated the
+  // cache would leave the app running on settings the next launch cannot see.
+  writeJsonAtomic(getSettingsPath(), next);
   cached = next;
-  const file = getSettingsPath();
-  const tmp = `${file}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(next, null, 2), 'utf-8');
-  fs.renameSync(tmp, file);
-  log.general.info(`settings updated: ${Object.keys(patch ?? {}).join(', ') || '(nothing)'}`);
+  // The values matter, not the keys: device, precision and low-VRAM change how
+  // the next generation runs, so the timeline has to show what they became.
+  const changed = (Object.keys(next) as (keyof AppSettings)[])
+    .filter((key) => next[key] !== previous[key])
+    .map((key) => `${key} ${String(previous[key])} → ${String(next[key])}`);
+  if (changed.length) log.general.info(`settings changed: ${changed.join(', ')}`);
+  else log.general.debug('settings saved with no change');
   return { ...next };
 }

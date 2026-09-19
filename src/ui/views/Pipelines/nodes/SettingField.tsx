@@ -1,7 +1,8 @@
 import React from 'react';
 import type { ModelSetting } from '../../../../core/models';
-import { Form } from '../../../components';
+import { Form, Tooltip } from '../../../components';
 import { DiceIcon } from '../../../assets/icons';
+import { FieldLabel } from '../InfoTip';
 
 type SettingValue = number | string | boolean;
 
@@ -17,11 +18,7 @@ const SLIDER_MAX_STEPS = 100;
 /** One control generated from a registry `ModelSetting`. */
 export const SettingField: React.FC<SettingFieldProps> = ({ setting, value, onChange }) => {
   const current = value ?? setting.default;
-  const label = (
-    <span className="pipe-field-label" title={setting.description}>
-      {setting.label}
-    </span>
-  );
+  const label = <FieldLabel label={setting.label} info={setting.description} />;
 
   if (setting.type === 'boolean') {
     return (
@@ -75,15 +72,11 @@ export const SettingField: React.FC<SettingFieldProps> = ({ setting, value, onCh
         {label}
         <div className="pipe-field-inline">
           {numberInput}
-          <button
-            type="button"
-            className="pipe-icon-btn"
-            title="Random seed every job (-1)"
-            aria-label="Use a random seed"
-            onClick={() => onChange(-1)}
-          >
-            <DiceIcon size={14} />
-          </button>
+          <Tooltip content="Draw a fresh seed for every job (-1)" portal bubbleClassName="pipe-info-bubble" delay={120}>
+            <button type="button" className="pipe-icon-btn" aria-label="Use a random seed" onClick={() => onChange(-1)}>
+              <DiceIcon size={14} />
+            </button>
+          </Tooltip>
         </div>
         {num === -1 && <span className="pipe-hint">random per job</span>}
       </div>

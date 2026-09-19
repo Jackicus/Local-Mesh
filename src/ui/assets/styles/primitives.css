@@ -420,7 +420,7 @@
     background: transparent;
     border: 1px solid transparent;
     cursor: pointer;
-    transition: all var(--transition-fast);
+    transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
     user-select: none;
     white-space: nowrap;
     text-box: trim-both cap alphabetic;
@@ -677,7 +677,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: all var(--transition-fast);
+    transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
     flex-shrink: 0;
     margin-top: 1px;
   }
@@ -685,7 +685,7 @@
   .ui-checkbox-custom.checked {
     background-color: var(--accent);
     border-color: var(--accent);
-    color: #ffffff;
+    color: var(--accent-text, #ffffff);
   }
 
   .ui-checkbox-text {
@@ -726,6 +726,13 @@
     cursor: pointer;
     accent-color: var(--accent);
     transition: border-color var(--transition-fast);
+  }
+
+  /* The `outline: none` above kills the reset's ring, so put one back for
+     keyboard focus (the track is the only affordance this control has). */
+  .ui-slider-input:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
   }
 
   .ui-slider-input:hover:not(:disabled) {

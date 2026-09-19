@@ -12,9 +12,29 @@ import type { LogChannel, LogEntry, LogLevel, LogReadOptions, LogSource } from '
  */
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
+/**
+ * Lines are batched for this long before they reach the disk. A chatty backend
+ * (tqdm, pip, a python traceback per frame) can emit hundreds of lines a second,
+ * and one synchronous append per line blocks the main process — i.e. the UI —
+ * on the filesystem. One async append per batch instead; the batch is flushed
+ * synchronously on exit so nothing is lost when the app quits.
+ */
+const FLUSH_INTERVAL_MS = 200;
 /** How much of each file is parsed back into the ring at startup. */
 const TAIL_BYTES = 512 * 1024;
 const LINE_RE = /^(\d{4}-\d{2}-\d{2}T[\d:.]+Z) (DEBUG|INFO|WARN|ERROR)\s+\[(\w+)\](?: \(([^)\s]+)\))? ?(.*)$/;
+/**
+ * Continuation lines of a multi-line message are indented on disk, so a python
+ * traceback frame can never be mistaken for a new entry by `LINE_RE` (or by a
+ * human grepping the file). The indent is stripped again on read-back.
+ */
+const CONTINUATION_INDENT = '  ';
+/** Longest message kept whole; a traceback or a pip dump is trimmed to this. */
+const MAX_MESSAGE_CHARS = 4000;
+const TRIM_HEAD = 1200;
+const TRIM_TAIL = MAX_MESSAGE_CHARS - TRIM_HEAD;
+/** CSI escape sequences: uv, pip and tqdm all colour their output. */
+const ANSI_RE = new RegExp('\\u001b\\[[0-9;?]*[ -/]*[@-~]', 'g');
 
 const buffers: Record<LogChannel, LogEntry[]> = { general: [], errors: [], generation: [] };
 const fileSizes: Record<LogChannel, number> = { general: 0, errors: 0, generation: 0 };
@@ -34,9 +54,32 @@ function filePath(channel: LogChannel): string {
   return path.join(logsDir ?? '', `${channel}.log`);
 }
 
+/** A line rewritten in place by a progress bar: only its final state is worth keeping. */
+function lastSegment(line: string): string {
+  if (!line.includes('\r')) return line.trimEnd();
+  const parts = line.split('\r').map((p) => p.trimEnd()).filter((p) => p !== '');
+  return parts[parts.length - 1] ?? '';
+}
+
+/**
+ * Everything a message picks up on its way in: colour codes from uv/pip, the
+ * carriage returns tqdm redraws with, and the sheer length of a traceback or a
+ * failed pip resolve. Trimming keeps the head (what failed) and the tail (why),
+ * which is where the answer always is.
+ */
+function normalize(raw: string): string {
+  let text = raw.replace(ANSI_RE, '').split('\n').map(lastSegment).join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  if (text.length > MAX_MESSAGE_CHARS) {
+    const dropped = text.length - MAX_MESSAGE_CHARS;
+    text = `${text.slice(0, TRIM_HEAD)}\n… ${dropped} characters trimmed …\n${text.slice(-TRIM_TAIL)}`;
+  }
+  return text;
+}
+
 function format(entry: LogEntry): string {
   const job = entry.jobId ? ` (${entry.jobId})` : '';
-  return `${new Date(entry.ts).toISOString()} ${entry.level.toUpperCase().padEnd(5)} [${entry.source}]${job} ${entry.message}\n`;
+  const message = entry.message.split('\n').join(`\n${CONTINUATION_INDENT}`);
+  return `${new Date(entry.ts).toISOString()} ${entry.level.toUpperCase().padEnd(5)} [${entry.source}]${job} ${message}\n`;
 }
 
 function parseTail(channel: LogChannel): LogEntry[] {
@@ -73,8 +116,9 @@ function parseTail(channel: LogChannel): LogEntry[] {
         ...(m[4] ? { jobId: m[4] } : {}),
       });
     } else if (entries.length && line) {
-      // Continuation of a multi-line message (tracebacks).
-      entries[entries.length - 1]!.message += `\n${line}`;
+      // Continuation of a multi-line message (tracebacks); `format` indented it.
+      const continued = line.startsWith(CONTINUATION_INDENT) ? line.slice(CONTINUATION_INDENT.length) : line;
+      entries[entries.length - 1]!.message += `\n${continued}`;
     }
   }
   return entries.slice(-LOG_RING_SIZE);
@@ -94,26 +138,75 @@ export function initLogger(dir: string): void {
       fileSizes[channel] = 0;
     }
   }
+  if (!exitHookInstalled) {
+    exitHookInstalled = true;
+    // Whatever is still buffered when the app goes away is the tail of the log
+    // that explains why — the one part nobody can afford to lose.
+    process.on('exit', () => flushPending(true));
+  }
+}
+
+const pending: Record<LogChannel, string[]> = { general: [], errors: [], generation: [] };
+/** Channels with an append in flight; their lines wait for the next flush so writes stay ordered. */
+const writing: Record<LogChannel, boolean> = { general: false, errors: false, generation: false };
+let flushTimer: NodeJS.Timeout | null = null;
+let exitHookInstalled = false;
+
+function rotateIfNeeded(channel: LogChannel, incoming: number): void {
+  if (fileSizes[channel] + incoming <= MAX_FILE_BYTES) return;
+  const file = filePath(channel);
+  try {
+    fs.renameSync(file, `${file}.1`);
+  } catch {
+    // Nothing to rotate yet.
+  }
+  fileSizes[channel] = 0;
+}
+
+/** Write out everything buffered. `sync` is for process exit, where a callback never runs. */
+function flushPending(sync = false): void {
+  if (!logsDir) return;
+  for (const channel of LOG_CHANNELS) {
+    const lines = pending[channel];
+    if (!lines.length) continue;
+    if (writing[channel] && !sync) continue;
+    const text = lines.join('');
+    lines.length = 0;
+    const bytes = Buffer.byteLength(text);
+    rotateIfNeeded(channel, bytes);
+    fileSizes[channel] += bytes;
+    const file = filePath(channel);
+    if (sync) {
+      try {
+        fs.appendFileSync(file, text);
+      } catch {
+        // A full disk must never take the app down with it.
+      }
+      continue;
+    }
+    writing[channel] = true;
+    fs.appendFile(file, text, () => {
+      writing[channel] = false;
+      // Lines that arrived mid-write are still queued; make sure they land.
+      if (pending[channel].length) scheduleFlush();
+    });
+  }
+}
+
+function scheduleFlush(): void {
+  if (flushTimer) return;
+  flushTimer = setTimeout(() => {
+    flushTimer = null;
+    flushPending();
+  }, FLUSH_INTERVAL_MS);
+  // Never hold the event loop — and so the app — open for a log line.
+  flushTimer.unref?.();
 }
 
 function appendToFile(channel: LogChannel, line: string): void {
   if (!logsDir) return;
-  const bytes = Buffer.byteLength(line);
-  const file = filePath(channel);
-  try {
-    if (fileSizes[channel] + bytes > MAX_FILE_BYTES) {
-      fs.renameSync(file, `${file}.1`);
-      fileSizes[channel] = 0;
-    }
-  } catch {
-    // Nothing to rotate yet.
-  }
-  try {
-    fs.appendFileSync(file, line);
-    fileSizes[channel] += bytes;
-  } catch {
-    // A full disk must never take the app down with it.
-  }
+  pending[channel].push(line);
+  scheduleFlush();
 }
 
 function push(entry: LogEntry): void {
@@ -132,7 +225,7 @@ function push(entry: LogEntry): void {
 
 /** Record one entry (plus its mirror in `errors` when level is error). Returns the primary entry. */
 export function write(input: LogInput): LogEntry {
-  const message = typeof input.message === 'string' ? input.message : String(input.message);
+  const message = normalize(typeof input.message === 'string' ? input.message : String(input.message));
   const entry: LogEntry = {
     id: nextId++,
     ts: Date.now(),
@@ -162,13 +255,19 @@ export function clearLogs(channel: LogChannel): void {
   if (!buffers[channel]) throw new Error(`Unknown log channel "${channel}".`);
   buffers[channel] = [];
   fileSizes[channel] = 0;
+  // Anything still buffered belongs to the log the user just cleared.
+  pending[channel].length = 0;
   if (!logsDir) return;
   try {
     fs.truncateSync(filePath(channel));
   } catch {
     // Missing file: nothing to clear.
   }
-  fs.rmSync(`${filePath(channel)}.1`, { force: true });
+  try {
+    fs.rmSync(`${filePath(channel)}.1`, { force: true });
+  } catch {
+    // A rotated file we may not remove is not worth failing the clear over.
+  }
 }
 
 export interface ChannelLog {
@@ -187,6 +286,27 @@ function channelLog(channel: LogChannel, source: LogSource): ChannelLog {
   return { debug: at('debug'), info: at('info'), warn: at('warn'), error: at('error') };
 }
 
+/**
+ * One failure, one error line. A long operation (env setup, a download, mesh
+ * processing) logs its own failure with the context only it has — the model id,
+ * the request id, the tail of pip's output — and then rethrows. Marking the
+ * error here lets the generic IPC wrapper it unwinds through stay quiet instead
+ * of writing a second, poorer line for the same event.
+ */
+const REPORTED = Symbol.for('localMesh.logger.reported');
+
+/** Tag an error as already logged, then throw it. Purely a logging marker. */
+export function reported<T>(err: T): T {
+  if (err instanceof Error) {
+    Object.defineProperty(err, REPORTED, { value: true, enumerable: false, configurable: true });
+  }
+  return err;
+}
+
+export function wasReported(err: unknown): boolean {
+  return err instanceof Error && (err as unknown as Record<symbol, unknown>)[REPORTED] === true;
+}
+
 export const log = {
   /** App lifecycle, IPC, settings — source 'main'. */
   general: channelLog('general', 'main'),
@@ -199,9 +319,11 @@ export const log = {
 
 export function installCrashLogging(): void {
   process.on('uncaughtException', (err) => {
-    log.general.error(`uncaughtException: ${err.stack ?? err}`);
+    log.general.error(`uncaught exception in the main process: ${err.stack ?? err}`);
   });
   process.on('unhandledRejection', (reason) => {
-    log.general.error(`unhandledRejection: ${reason instanceof Error ? (reason.stack ?? reason.message) : String(reason)}`);
+    log.general.error(
+      `unhandled promise rejection in the main process: ${reason instanceof Error ? (reason.stack ?? reason.message) : String(reason)}`
+    );
   });
 }

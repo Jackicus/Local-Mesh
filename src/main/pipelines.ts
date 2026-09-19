@@ -1,10 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { createDefaultPipeline, summarizePipeline } from '../core/types';
+import { createDefaultPipeline, migratePipeline, summarizePipeline } from '../core/types';
 import type { Pipeline, PipelineSummary } from '../core/types';
+import { plural } from './format';
 import { log } from './logger';
 import { getPaths } from './paths';
-import { getSettings, setSettings } from './settings';
+import { errorMessage } from './proc';
+import { getSettings, setSettings, writeJsonAtomic } from './settings';
 
 const ID_RE = /^[\w-]+$/;
 
@@ -26,12 +28,33 @@ export function readPipeline(id: string): Pipeline | null {
   } catch {
     return null;
   }
+  let parsed: unknown;
   try {
-    const parsed: unknown = JSON.parse(fs.readFileSync(file, 'utf-8'));
-    return isPipeline(parsed) ? parsed : null;
-  } catch {
+    parsed = JSON.parse(fs.readFileSync(file, 'utf-8'));
+  } catch (err) {
+    // listPipelines warns once per bad file; the reason belongs here, next to it.
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code !== 'ENOENT') log.general.debug(`${id}.json could not be read: ${errorMessage(err)}`);
     return null;
   }
+  if (!isPipeline(parsed)) {
+    log.general.debug(`${id}.json is not a pipeline (missing id, name, nodes or edges)`);
+    return null;
+  }
+  const migrated = migratePipeline(parsed);
+  // Settle the file on the current node vocabulary once, rather than
+  // re-deriving the same graph on every read.
+  if (migrated !== parsed) {
+    try {
+      writePipeline(migrated);
+      log.general.info(`pipeline "${migrated.name}" migrated to individual mesh op nodes`);
+    } catch (err) {
+      log.general.warn(
+        `pipeline "${migrated.name}" was migrated in memory but could not be saved: ${errorMessage(err)}`
+      );
+    }
+  }
+  return migrated;
 }
 
 export function listPipelines(): PipelineSummary[] {
@@ -54,18 +77,26 @@ export function listPipelines(): PipelineSummary[] {
 export function writePipeline(pipeline: Pipeline): boolean {
   if (!isPipeline(pipeline)) throw new Error('Not a pipeline.');
   const file = pipelineFile(pipeline.id);
-  const tmp = `${file}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(pipeline, null, 2), 'utf-8');
-  fs.renameSync(tmp, file);
+  // The editor autosaves on a debounce, so two saves of the same pipeline can
+  // overlap; a shared `.tmp` name would let one truncate the other's staging
+  // file and rename the result into place.
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  writeJsonAtomic(file, pipeline);
+  // The editor autosaves on a 600ms debounce, so this fires while the user is
+  // still dragging nodes around: a timeline event it is not.
+  log.general.debug(
+    `pipeline "${pipeline.name}" saved (${plural(pipeline.nodes.length, 'node')}, ${plural(pipeline.edges.length, 'edge')})`
+  );
   return true;
 }
 
 export function deletePipeline(id: string): boolean {
   const file = pipelineFile(id);
   if (!fs.existsSync(file)) return false;
+  const name = readPipeline(id)?.name ?? id;
   fs.rmSync(file);
   if (getSettings().defaultPipelineId === id) setSettings({ defaultPipelineId: null });
-  log.general.info(`pipeline ${id} deleted`);
+  log.general.info(`pipeline "${name}" deleted`);
   return true;
 }
 
@@ -75,5 +106,5 @@ export function ensureDefaultPipeline(): void {
   const pipeline = createDefaultPipeline();
   writePipeline(pipeline);
   if (!getSettings().defaultPipelineId) setSettings({ defaultPipelineId: pipeline.id });
-  log.general.info(`created default pipeline ${pipeline.id}`);
+  log.general.info(`no pipelines found; created the default "${pipeline.name}"`);
 }

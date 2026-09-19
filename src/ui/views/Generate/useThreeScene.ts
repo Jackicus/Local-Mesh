@@ -9,6 +9,14 @@ import { viewerStore, type SceneController } from './viewerStore';
 const VIEW_DIRECTION = new THREE.Vector3(1, 0.62, 1.15).normalize();
 /** Framed when nothing is loaded, so the grid reads as a room, not a plane. */
 const EMPTY_BOUNDS = new THREE.Box3(new THREE.Vector3(-1.2, 0, -1.2), new THREE.Vector3(1.2, 1.2, 1.2));
+/** How long the gizmo takes to swing the camera onto an axis. */
+const SNAP_MS = 420;
+
+const easeOut = (t: number) => 1 - (1 - t) ** 3;
+
+function prefersReducedMotion(): boolean {
+  return typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
 
 function setWireframeOn(root: THREE.Object3D | null, on: boolean) {
   root?.traverse((o) => {
@@ -65,11 +73,28 @@ export function useThreeScene(containerRef: RefObject<HTMLDivElement | null>): v
     let dirty = true;
     let idleFrames = 0;
 
+    // A gizmo snap in flight: the camera is flown to `to` and handed back to
+    // OrbitControls, which keeps looking at its own target throughout.
+    const snapFrom = new THREE.Vector3();
+    const snapTo = new THREE.Vector3();
+    let snapStart = 0;
+
+    const stepSnap = () => {
+      if (snapStart === 0) return;
+      const t = Math.min(1, (performance.now() - snapStart) / SNAP_MS);
+      camera.position.lerpVectors(snapFrom, snapTo, easeOut(t));
+      if (t >= 1) snapStart = 0;
+      dirty = true;
+    };
+
     const tick = () => {
       rafId = requestAnimationFrame(tick);
+      stepSnap();
       const moved = controls.update();
       if (moved || dirty) {
         renderer.render(scene, camera);
+        const { x, y, z, w } = camera.quaternion;
+        viewerStore.publishCameraPose([x, y, z, w]);
         dirty = false;
         idleFrames = 0;
       } else if (++idleFrames > 2) {
@@ -126,6 +151,23 @@ export function useThreeScene(containerRef: RefObject<HTMLDivElement | null>): v
         frameContent();
       },
       resetCamera: frameContent,
+      snapToAxis(x, y, z) {
+        const distance = camera.position.distanceTo(controls.target);
+        // OrbitControls clamps the polar angle so the camera never ducks under
+        // the grid; aiming dead-on at an axis would sit exactly on that limit,
+        // so the poles are nudged a hair inside it and stay stable.
+        const direction = new THREE.Vector3(x, y, z).normalize();
+        if (Math.abs(direction.y) > 0.999) direction.set(0, Math.sign(direction.y) * 0.9995, 0.032).normalize();
+        snapTo.copy(controls.target).addScaledVector(direction, distance);
+        if (prefersReducedMotion()) {
+          snapStart = 0;
+          camera.position.copy(snapTo);
+        } else {
+          snapFrom.copy(camera.position);
+          snapStart = performance.now();
+        }
+        requestRender();
+      },
       setGrid(on) {
         gridVisible = on;
         if (grid) grid.visible = on;
@@ -145,6 +187,11 @@ export function useThreeScene(containerRef: RefObject<HTMLDivElement | null>): v
     const resize = () => {
       const { clientWidth, clientHeight } = container;
       if (clientWidth === 0 || clientHeight === 0) return;
+      // Dragging the window onto a display of a different density changes the
+      // ratio without changing the CSS size, so re-read it here rather than
+      // only at construction.
+      const ratio = Math.min(window.devicePixelRatio, 2);
+      if (renderer.getPixelRatio() !== ratio) renderer.setPixelRatio(ratio);
       renderer.setSize(clientWidth, clientHeight, false);
       camera.aspect = clientWidth / clientHeight;
       camera.updateProjectionMatrix();
@@ -158,7 +205,12 @@ export function useThreeScene(containerRef: RefObject<HTMLDivElement | null>): v
     const observer = new ResizeObserver(resize);
     observer.observe(container);
     const unwatchTheme = watchTheme(applyTheme);
+    // Taking hold of the mouse always wins over an in-flight gizmo snap.
+    const cancelSnap = () => {
+      snapStart = 0;
+    };
     controls.addEventListener('change', requestRender);
+    controls.addEventListener('start', cancelSnap);
     const unregister = viewerStore.registerController(controller);
 
     return () => {
@@ -166,6 +218,7 @@ export function useThreeScene(containerRef: RefObject<HTMLDivElement | null>): v
       unwatchTheme();
       observer.disconnect();
       controls.removeEventListener('change', requestRender);
+      controls.removeEventListener('start', cancelSnap);
       if (rafId) cancelAnimationFrame(rafId);
       // The loaded mesh belongs to viewerStore (it survives navigation), so
       // detach it rather than disposing it here.

@@ -1,18 +1,29 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { compilePipeline, getModel, newId, summarizePipeline, validatePipeline } from '../core/types';
+import {
+  compilePipeline,
+  describeMeshOp,
+  getModel,
+  MESH_OP_DEFINITIONS,
+  MESH_OP_KINDS,
+  newId,
+  normalizeMeshOps,
+  summarizePipeline,
+  validatePipeline,
+} from '../core/types';
 import type {
   GenerationJob,
   GenerationJobRequest,
   MeshGeneratorData,
-  MeshProcessOp,
+  MeshOp,
   MeshProcessRequest,
   MeshProcessResult,
   WorkerEvent,
 } from '../core/types';
 import { envPython, isEnvUsable } from './envManager';
-import { log } from './logger';
+import { formatBytes, formatDuration, plural, since } from './format';
+import { log, reported } from './logger';
 import { getModelInstallState, modelDir } from './modelManager';
 import { getPaths, isInside } from './paths';
 import { readPipeline } from './pipelines';
@@ -29,7 +40,7 @@ import {
 } from './queueState';
 import { WorkerProcess } from './worker';
 
-export { getState, isBusy, isModelLoaded } from './queueState';
+export { dismissJob, getState, isBusy, isModelLoaded, reorderQueue } from './queueState';
 
 /**
  * The generation queue: one job at a time through one python worker, which
@@ -48,6 +59,9 @@ const glog = log.generation;
 const wlog = log.for('worker', 'generation');
 
 let worker: WorkerProcess | null = null;
+/** In-flight start / stop, so the two can never overlap or run twice at once. */
+let startPromise: Promise<WorkerProcess> | null = null;
+let stopPromise: Promise<void> | null = null;
 let pumping = false;
 let stopping = false;
 let idleTimer: NodeJS.Timeout | null = null;
@@ -59,6 +73,21 @@ type TerminalEvent = Extract<WorkerEvent, { event: 'done' | 'cancelled' | 'error
 // ---------------------------------------------------------------------------
 // Worker lifecycle
 // ---------------------------------------------------------------------------
+
+/**
+ * True when no in-flight call is waiting to turn a worker `error` event into a
+ * failed job, a failed load or a rejected request — i.e. when an error would
+ * otherwise vanish without ever being logged.
+ */
+function nothingAwaitingWorker(): boolean {
+  return (
+    !state.activeJobId &&
+    !state.processing &&
+    state.worker !== 'loading' &&
+    state.worker !== 'unloading' &&
+    state.worker !== 'starting'
+  );
+}
 
 function onWorkerEvent(event: WorkerEvent): void {
   switch (event.event) {
@@ -85,6 +114,16 @@ function onWorkerEvent(event: WorkerEvent): void {
       if (!job || isFinished(job)) return;
       job.progress = { pct: event.pct, stage: event.stage, message: event.message };
       broadcast();
+      break;
+    }
+    case 'error': {
+      // The message itself reaches the log through whatever awaited this event
+      // (markFailed, or the caller that threw). Two things do not: the python
+      // traceback, which is the only way to debug a backend, and an error that
+      // arrives with nothing waiting to attribute it.
+      const id = event.job_id ?? event.request_id;
+      if (event.traceback) wlog.debug(`python traceback:\n${event.traceback.trim()}`, id);
+      if (!id && nothingAwaitingWorker()) wlog.error(`worker error: ${event.message}`);
       break;
     }
     case 'memory':
@@ -118,7 +157,10 @@ function onWorkerExit(instance: WorkerProcess, code: number | null, signal: Node
       markCancelled(job);
       state.worker = 'stopped';
       state.workerError = null;
+      glog.info(`worker stopped to honour the cancel (${detail})`);
     } else {
+      // markFailed records the error against the job, with the same detail in
+      // it — a second error line here would be the same event logged twice.
       markFailed(job, `The python worker exited unexpectedly (${detail}).`);
       state.worker = 'error';
       state.workerError = `Worker exited (${detail}).`;
@@ -126,16 +168,42 @@ function onWorkerExit(instance: WorkerProcess, code: number | null, signal: Node
   } else if (stopping || code === 0) {
     state.worker = 'stopped';
     state.workerError = null;
+    glog.info(`worker stopped (${detail})`);
   } else {
     state.worker = 'error';
     state.workerError = `Worker exited (${detail}).`;
+    glog.error(
+      `worker exited unexpectedly while idle (${detail}); it will be restarted for the next job. ` +
+        'A kill like this is usually the OS running out of RAM.'
+    );
   }
-  glog.info(`worker exited (${detail})`);
   broadcast(true);
 }
 
+/**
+ * Start the worker at most once, however many callers ask at the same time, and
+ * never on top of a stop that is still finishing.
+ *
+ * Two concurrent `ensureWorker()` calls (two Load buttons, a job starting while
+ * the Models view loads a model) each used to spawn a python process and the
+ * second overwrote `worker` — the first was then orphaned, holding its VRAM,
+ * with nothing left that could ever stop it. And a start racing the idle
+ * `stopWorker(true)` would hand back the instance that was already shutting
+ * down, so the next command went to a dying process.
+ */
 async function ensureWorker(): Promise<WorkerProcess> {
+  if (stopPromise) await stopPromise;
   if (worker?.alive) return worker;
+  if (startPromise) return startPromise;
+  startPromise = startWorker();
+  try {
+    return await startPromise;
+  } finally {
+    startPromise = null;
+  }
+}
+
+async function startWorker(): Promise<WorkerProcess> {
   if (!isEnvUsable()) {
     throw new Error('The Python environment is not set up yet. Run Setup in the Environment view.');
   }
@@ -151,21 +219,36 @@ async function ensureWorker(): Promise<WorkerProcess> {
     onWorkerExit(instance, info.code, info.signal)
   );
   glog.info(`worker starting (pid ${instance.pid ?? '?'})`);
+  const startedAt = Date.now();
 
   try {
     const ready = await instance.waitFor((e) => e.event === 'ready', WORKER_START_MS, 'worker startup');
     if (ready.event === 'ready') {
       state.memory = { ...state.memory, vramTotalBytes: ready.vram_total, sampledAt: Date.now() };
+      const gpu = ready.gpu
+        ? ` (${ready.gpu}${ready.vram_total ? `, ${formatBytes(ready.vram_total)}` : ''})`
+        : '';
       glog.info(
-        `worker ready: python ${ready.python}, torch ${ready.torch ?? 'missing'}, cuda ${ready.cuda}${ready.gpu ? ` (${ready.gpu})` : ''}`
+        `worker ready in ${since(startedAt)}: python ${ready.python}, ` +
+          `torch ${ready.torch ?? 'missing'}, cuda ${ready.cuda}${gpu}`
       );
     }
   } catch (err) {
     const message = errorMessage(err);
+    // The job path logs this against the job; every other caller unwinds to an
+    // IPC handler that logs it. Only the kill is worth a line of its own.
+    glog.warn(`worker startup failed after ${since(startedAt)}; killing pid ${instance.pid ?? '?'}`);
+    // `stopping` marks the kill as ours, so onWorkerExit doesn't report it as a
+    // crash — and doesn't overwrite the startup error with "Worker exited".
+    stopping = true;
+    try {
+      await instance.stop(false);
+    } finally {
+      stopping = false;
+    }
     state.worker = 'error';
     state.workerError = message;
     broadcast(true);
-    await instance.stop(false);
     throw new Error(message);
   }
   state.worker = 'idle';
@@ -177,6 +260,7 @@ async function ensureWorker(): Promise<WorkerProcess> {
 async function unloadInternal(instance: WorkerProcess): Promise<void> {
   if (!state.loadedModelId) return;
   const previous = state.loadedModelId;
+  const startedAt = Date.now();
   state.worker = 'unloading';
   broadcast(true);
   try {
@@ -186,13 +270,15 @@ async function unloadInternal(instance: WorkerProcess): Promise<void> {
       UNLOAD_TIMEOUT_MS,
       'unload'
     );
-    if (event.event === 'error') glog.warn(`unload reported an error: ${event.message}`);
+    // Either way the model is dropped on our side; the VRAM may not come back
+    // until the worker restarts, which is degraded rather than broken.
+    if (event.event === 'error') glog.warn(`${previous} did not unload cleanly: ${event.message}`);
   } catch (err) {
-    glog.warn(`unload failed: ${errorMessage(err)}`);
+    glog.warn(`${previous} did not unload cleanly: ${errorMessage(err)}`);
   }
   state.loadedModelId = null;
   if (state.worker === 'unloading') state.worker = 'idle';
-  glog.info(`unloaded ${previous}`);
+  glog.info(`unloaded ${previous} in ${since(startedAt)}`);
   broadcast(true);
 }
 
@@ -210,7 +296,9 @@ async function loadInternal(instance: WorkerProcess, modelId: string): Promise<v
   state.device = settings.device;
   state.precision = settings.precision;
   broadcast(true);
-  glog.info(`loading ${modelId} (device ${settings.device}, precision ${settings.precision}, low_vram ${settings.lowVram})`);
+  glog.info(
+    `loading ${modelId} (device ${settings.device}, precision ${settings.precision}, low-vram ${settings.lowVram})`
+  );
 
   try {
     instance.send({
@@ -227,7 +315,15 @@ async function loadInternal(instance: WorkerProcess, modelId: string): Promise<v
       `loading ${model.name}`
     );
     if (event.event === 'error') throw new Error(formatWorkerError(event));
-    if (event.event === 'loaded') glog.info(`loaded ${modelId} in ${Math.round(event.duration_ms)}ms`);
+    if (event.event === 'loaded') glog.info(`loaded ${modelId} in ${formatDuration(event.duration_ms)}`);
+  } catch (err) {
+    // Leaving `worker` at 'loading' would make isBusy() true forever, and every
+    // later load, unload or job would be refused as "the queue is busy". Only
+    // runJob used to unwind this; loadModel() from the Models view did not.
+    state.loadingModelId = null;
+    if (state.worker === 'loading') state.worker = worker?.alive ? 'idle' : 'stopped';
+    broadcast(true);
+    throw err;
   } finally {
     state.loadingModelId = null;
   }
@@ -270,14 +366,27 @@ function formatWorkerError(event: Extract<WorkerEvent, { event: 'error' }>): str
 // Job transitions
 // ---------------------------------------------------------------------------
 
+/** How long the job has been alive, for the line that closes it out. */
+function jobElapsed(job: GenerationJob): string {
+  return since(job.runningAt ?? job.startedAt ?? job.createdAt);
+}
+
 function markDone(job: GenerationJob, event: Extract<WorkerEvent, { event: 'done' }>): void {
   job.status = 'done';
   job.finishedAt = Date.now();
   job.outputPath = event.output;
   job.stats = { vertices: event.vertices, faces: event.faces };
   job.progress = { pct: 100, stage: 'export', message: 'Done' };
+  let size = 0;
+  try {
+    size = fs.statSync(event.output).size;
+  } catch {
+    // The worker just wrote it; if it is already gone, the line loses a size.
+  }
+  const about = [`${event.vertices} verts`, `${event.faces} faces`];
+  if (size) about.push(formatBytes(size));
   glog.info(
-    `done in ${Math.round(event.duration_ms)}ms → ${path.basename(event.output)} (${event.vertices} verts, ${event.faces} faces)`,
+    `done in ${formatDuration(event.duration_ms)} → ${path.basename(event.output)} (${about.join(', ')})`,
     job.id
   );
 }
@@ -286,13 +395,15 @@ function markFailed(job: GenerationJob, message: string): void {
   job.status = 'failed';
   job.finishedAt = Date.now();
   job.error = message;
-  glog.error(message, job.id);
+  glog.error(`failed after ${jobElapsed(job)}: ${message}`, job.id);
 }
 
 function markCancelled(job: GenerationJob): void {
+  const queued = job.status === 'queued';
   job.status = 'cancelled';
   job.finishedAt = Date.now();
-  glog.warn('job cancelled', job.id);
+  // A cancel is what the user asked for, not a degraded outcome.
+  glog.info(queued ? 'cancelled before it started' : `cancelled after ${jobElapsed(job)}`, job.id);
 }
 
 // ---------------------------------------------------------------------------
@@ -328,17 +439,23 @@ async function onIdle(): Promise<void> {
     return;
   }
   state.idleUnloadAt = null;
+  const settings = getSettings();
+  const idle = `idle for ${settings.idleUnloadMinutes}m`;
   try {
-    if (getSettings().stopWorkerWhenIdle) {
-      glog.info('idle timeout: stopping the worker');
+    if (settings.stopWorkerWhenIdle) {
+      glog.info(`${idle}: stopping the worker to release its memory`);
       await stopWorker();
     } else if (worker?.alive && state.loadedModelId) {
-      glog.info('idle timeout: unloading the model');
+      glog.info(`${idle}: unloading ${state.loadedModelId} to release its VRAM`);
       await unloadInternal(worker);
     }
   } catch (err) {
-    glog.warn(`idle unload failed: ${errorMessage(err)}`);
+    glog.warn(`could not release memory after the idle timeout: ${errorMessage(err)}`);
   }
+  // Re-arm: a job may have been queued while the release was in flight, and a
+  // release that did not take (an unload the worker refused) should be retried
+  // rather than leaving memory held with no timer left to free it.
+  scheduleIdleUnload();
   broadcast(true);
 }
 
@@ -400,7 +517,16 @@ function pump(): void {
       for (;;) {
         const next = state.jobs.find((j) => j.status === 'queued');
         if (!next) break;
-        await runJob(next);
+        try {
+          await runJob(next);
+        } catch (err) {
+          // runJob handles its own failures; anything that still escapes would
+          // otherwise leave the job non-terminal for good — and, because the
+          // loop is the only thing that clears activeJobId, the whole queue
+          // permanently "busy". Close the job out and carry on.
+          if (!isFinished(next)) markFailed(next, errorMessage(err));
+          if (state.activeJobId === next.id) state.activeJobId = null;
+        }
       }
     } finally {
       pumping = false;
@@ -471,7 +597,11 @@ export function enqueue(request: GenerationJobRequest): string[] {
     };
     state.jobs.push(job);
     ids.push(jobId);
-    glog.info(`queued ${name} → ${spec.modelId} (seed ${String(spec.settings['seed'])})`, jobId);
+    const position = images.length > 1 ? ` [${index + 1}/${images.length}]` : '';
+    glog.info(
+      `queued${position} ${name} → ${spec.modelId} via "${pipeline.name}" (seed ${String(spec.settings['seed'])})`,
+      jobId
+    );
   });
 
   trimJobs();
@@ -490,56 +620,47 @@ export function cancelGeneration(jobId: string): void {
     return;
   }
   cancelRequests.add(jobId);
-  glog.info('cancel requested', jobId);
+  glog.info(`cancelling while ${job.status}`, jobId);
   try {
     worker?.send({ cmd: 'cancel', job_id: jobId });
   } catch (err) {
-    glog.warn(`could not deliver cancel: ${errorMessage(err)}`, jobId);
+    glog.warn(`could not deliver the cancel to the worker: ${errorMessage(err)}`, jobId);
   }
   if (hardCancelTimer) clearTimeout(hardCancelTimer);
   hardCancelTimer = setTimeout(() => {
     hardCancelTimer = null;
     const current = findJob(jobId);
     if (!current || isFinished(current)) return;
-    glog.warn('worker did not acknowledge the cancel; killing it', jobId);
+    glog.warn(
+      `worker did not stop within ${HARD_CANCEL_MS / 1000}s of the cancel; killing it ` +
+        '(a backend stuck inside a library call cannot be interrupted any other way)',
+      jobId
+    );
     void stopWorker(false);
   }, HARD_CANCEL_MS);
 }
 
 export function clearFinishedJobs(): void {
+  const before = state.jobs.length;
   state.jobs = state.jobs.filter((j) => !isFinished(j));
+  const cleared = before - state.jobs.length;
+  if (cleared > 0) glog.info(`cleared ${plural(cleared, 'finished job')} from the queue`);
   broadcast(true);
 }
 
 // ---------------------------------------------------------------------------
-// Mesh post-processing (Reduce / Smooth on a finished output)
+// Mesh ops on a finished output (the Generate view's mesh tools)
 // ---------------------------------------------------------------------------
 
 const PROCESS_TIMEOUT_MS = 10 * 60_000;
-const MAX_SMOOTH_ITERATIONS = 200;
 /** Suffixes this feature appends, stripped before appending again. */
-const PROCESS_SUFFIX = /-(?:reduced|smooth)$/;
+const PROCESS_SUFFIX = new RegExp(
+  `-(?:${MESH_OP_KINDS.map((k) => MESH_OP_DEFINITIONS[k].suffix).join('|')})$`
+);
 
-function validateOps(raw: unknown): MeshProcessOp[] {
+function validateOps(raw: unknown): MeshOp[] {
   if (!Array.isArray(raw) || raw.length === 0) throw new Error('Choose at least one mesh operation.');
-  return raw.map((item): MeshProcessOp => {
-    const op = (item as { op?: unknown } | null)?.op;
-    if (op === 'decimate') {
-      const ratio = Number((item as { ratio?: unknown }).ratio);
-      if (!Number.isFinite(ratio) || ratio <= 0 || ratio >= 1) {
-        throw new Error('Reduce needs a ratio strictly between 0 and 1.');
-      }
-      return { op: 'decimate', ratio };
-    }
-    if (op === 'smooth') {
-      const iterations = Math.round(Number((item as { iterations?: unknown }).iterations));
-      if (!Number.isFinite(iterations) || iterations < 1 || iterations > MAX_SMOOTH_ITERATIONS) {
-        throw new Error(`Smooth needs an iteration count between 1 and ${MAX_SMOOTH_ITERATIONS}.`);
-      }
-      return { op: 'smooth', iterations };
-    }
-    throw new Error(`Unknown mesh operation "${String(op)}".`);
-  });
+  return normalizeMeshOps(raw);
 }
 
 /** `cat-reduced-smooth` → `cat`, so repeated passes don't grow the name forever. */
@@ -552,15 +673,14 @@ function baseStem(stem: string): string {
   }
 }
 
-function suffixFor(ops: MeshProcessOp[]): string {
+/** One suffix per distinct op, in the order they ran. */
+function suffixFor(ops: MeshOp[]): string {
   const parts: string[] = [];
-  if (ops.some((o) => o.op === 'decimate')) parts.push('reduced');
-  if (ops.some((o) => o.op === 'smooth')) parts.push('smooth');
+  for (const op of ops) {
+    const suffix = MESH_OP_DEFINITIONS[op.op].suffix;
+    if (!parts.includes(suffix)) parts.push(suffix);
+  }
   return parts.join('-') || 'processed';
-}
-
-function describeOp(op: MeshProcessOp): string {
-  return op.op === 'decimate' ? `decimate to ${Math.round(op.ratio * 100)}%` : `smooth x${op.iterations}`;
 }
 
 /**
@@ -593,7 +713,7 @@ export async function processMesh(request: MeshProcessRequest): Promise<MeshProc
     state.worker = 'processing';
     broadcast(true);
     glog.info(
-      `processing ${path.basename(inputPath)} → ${path.basename(output)} (${ops.map(describeOp).join(', ')})`,
+      `processing ${path.basename(inputPath)} → ${path.basename(output)} (${ops.map(describeMeshOp).join(', ')})`,
       requestId
     );
 
@@ -610,7 +730,8 @@ export async function processMesh(request: MeshProcessRequest): Promise<MeshProc
     if (event.event !== 'processed') throw new Error('Mesh processing was cancelled.');
 
     glog.info(
-      `processed in ${Math.round(event.duration_ms)}ms → ${path.basename(event.output)} (${event.vertices} verts, ${event.faces} faces)`,
+      `processed in ${formatDuration(event.duration_ms)} → ${path.basename(event.output)} ` +
+        `(${event.vertices} verts, ${event.faces} faces)`,
       requestId
     );
     return {
@@ -620,8 +741,10 @@ export async function processMesh(request: MeshProcessRequest): Promise<MeshProc
       durationMs: event.duration_ms,
     };
   } catch (err) {
+    // Logged here so the line carries the request id; `reported` keeps the IPC
+    // wrapper from writing the same failure again without it.
     glog.error(`mesh processing failed: ${errorMessage(err)}`, requestId);
-    throw err;
+    throw reported(err);
   } finally {
     state.processing = null;
     if (state.worker === 'processing') state.worker = worker?.alive ? 'idle' : 'stopped';
@@ -661,10 +784,21 @@ export async function stopWorker(graceful = true): Promise<void> {
     return;
   }
   stopping = true;
+  // Published so ensureWorker() waits for the process to actually be gone
+  // instead of handing the next job a worker that is mid-shutdown. A second
+  // stop (the hard cancel, say) still reaches instance.stop and kills it.
+  const done = instance.stop(graceful).then(
+    () => undefined,
+    () => undefined
+  );
+  stopPromise = done;
   try {
-    await instance.stop(graceful);
+    await done;
   } finally {
-    stopping = false;
+    if (stopPromise === done) {
+      stopPromise = null;
+      stopping = false;
+    }
   }
 }
 

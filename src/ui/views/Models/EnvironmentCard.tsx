@@ -4,48 +4,36 @@ import { Badge, Button, Card, Modal, toast } from '../../components';
 import {
   AlertTriangleIcon,
   CancelIcon,
+  CheckCircleIcon,
   CopyIcon,
+  CpuIcon,
+  ExternalLinkIcon,
   FolderOpenIcon,
-  InfoIcon,
   LoaderIcon,
+  RefreshIcon,
   TrashIcon,
   WrenchIcon,
 } from '../../assets/icons';
 import { useEnvStore } from '../../stores/envStore';
+import { Disclosure } from './Disclosure';
 import { ProgressBar } from './ProgressBar';
 import { SetupLog } from './SetupLog';
 import { formatGb } from './formatBytes';
-
-const UV_INSTALL = 'curl -LsSf https://astral.sh/uv/install.sh | sh';
-const PASCAL = /GTX 10|Pascal|P100|Titan X/i;
+import { PHASE_LABEL, UV_HOME, UV_INSTALL } from './copy';
 
 /** Phases main only reports while a setup is actually running (never on a status poll). */
 const SETUP_PHASES: EnvPhase[] = ['creating-venv', 'installing-torch', 'installing-base', 'verifying'];
 
-const PHASE_LABEL: Record<string, string> = {
-  checking: 'Checking',
-  'creating-venv': 'Creating virtualenv',
-  'installing-torch': 'Installing torch (cu126)',
-  'installing-base': 'Installing base requirements',
-  verifying: 'Verifying imports',
-  done: 'Done',
-  failed: 'Failed',
-  cancelled: 'Cancelled',
-};
+const PASCAL = /GTX 10|Pascal|P100|Titan X/i;
 
-interface FieldProps {
-  label: string;
-  /** Full text for the tooltip when the value is truncated. */
-  title?: string;
-  /** Spans both columns — used by the GPU line, which is the longest. */
-  wide?: boolean;
-  children: React.ReactNode;
-}
-
-const Field: React.FC<FieldProps> = ({ label, title, wide, children }) => (
-  <div className={`models-env-field ${wide ? 'wide' : ''}`}>
-    <span className="models-env-label">{label}</span>
-    <span className="models-env-value" title={title}>
+const Detail: React.FC<{ label: string; title?: string; children: React.ReactNode }> = ({
+  label,
+  title,
+  children,
+}) => (
+  <div className="models-detail">
+    <span className="models-detail-label">{label}</span>
+    <span className="models-detail-value" title={title}>
       {children}
     </span>
   </div>
@@ -60,6 +48,12 @@ async function copy(text: string) {
   }
 }
 
+/**
+ * Step one, and the only step that is shared: a private Python with PyTorch in
+ * it. The card leads with a sentence about where you are and one button; every
+ * version string it used to put on the front page now lives behind "Technical
+ * details".
+ */
 export const EnvironmentCard: React.FC = () => {
   const [env, actions] = useEnvStore();
   const [confirmRemove, setConfirmRemove] = useState(false);
@@ -73,92 +67,169 @@ export const EnvironmentCard: React.FC = () => {
   // as a running phase on the status, with settingUp still false here.
   const inSetup = settingUp || Boolean(status && SETUP_PHASES.includes(status.phase));
   const phase = progress?.phase ?? status?.phase ?? 'checking';
-  // uv reports "0.12.13 (hash date target)" — only the number belongs in the grid.
-  const uvVersion = status?.uvVersion?.split(' ')[0] ?? '?';
 
-  const readyBadge = !status ? (
-    <Badge variant="neutral">Checking…</Badge>
+  const badge = !status ? (
+    <Badge variant="neutral">Checking</Badge>
   ) : inSetup ? (
     <Badge variant="accent" icon={<LoaderIcon size={12} className="models-spin" />}>
-      Setting up
+      Installing
     </Badge>
   ) : status.ready ? (
-    <Badge variant="success">Ready</Badge>
+    <Badge variant="success" icon={<CheckCircleIcon size={12} />}>
+      Ready
+    </Badge>
   ) : status.envExists ? (
-    <Badge variant="warning">Incomplete</Badge>
+    <Badge variant="warning">Needs repair</Badge>
   ) : (
-    <Badge variant="neutral">Not set up</Badge>
+    <Badge variant="neutral">Not installed</Badge>
   );
 
+  const gpuLine = () => {
+    if (status?.cudaAvailable === true) {
+      return (
+        <>
+          Running on <strong>{status.gpuName ?? 'your graphics card'}</strong>
+          {status.vramTotalBytes ? ` with ${formatGb(status.vramTotalBytes)} of graphics memory` : ''}.
+        </>
+      );
+    }
+    if (status?.cudaAvailable === false) {
+      return 'No NVIDIA graphics card was found, so models will run on the processor instead. That works, but expect many minutes per mesh.';
+    }
+    return 'Your graphics card is checked while the engine installs.';
+  };
+
   return (
-    <Card
-      title="Python environment"
-      subtitle={`uv venv · torch · worker scripts v${status?.scriptsVersion ?? '?'} bundled`}
-      icon={<WrenchIcon size={20} />}
-      action={readyBadge}
-    >
-      <div className="models-env-grid">
-        <Field label="uv" title={status?.uvVersion ?? undefined}>
-          {status?.uvAvailable ? `v${uvVersion}` : <span className="models-danger">not found</span>}
-        </Field>
-        <Field label="env" title={paths?.env}>
-          {status?.envExists ? (paths?.env ?? '~/.local-mesh/env') : <span className="models-muted">missing</span>}
-        </Field>
-        <Field label="python">{status?.pythonVersion ?? <span className="models-muted">unknown</span>}</Field>
-        <Field label="torch">{status?.torchVersion ?? <span className="models-muted">unknown</span>}</Field>
-        <Field label="gpu" wide>
-          {status?.cudaAvailable ? (
-            <>
-              {status.gpuName ?? 'GPU'}
-              <span className="models-muted"> · {formatGb(status.vramTotalBytes)} VRAM</span>
-            </>
-          ) : (
-            <span className="models-warning">no CUDA device</span>
-          )}
-        </Field>
-      </div>
-
-      {uvMissing && (
-        <div className="models-hint">
-          <span>Install uv, then reopen this view:</span>
-          <div className="models-code-row">
-            <code className="models-code">{UV_INSTALL}</code>
-            <Button size="sm" variant="subtle" icon={<CopyIcon size={14} />} onClick={() => copy(UV_INSTALL)}>
-              Copy
-            </Button>
+    <Card className="models-engine">
+      <Card.Header>
+        <div className="ui-card-title-group">
+          <span className="ui-card-icon">
+            <CpuIcon size={20} />
+          </span>
+          <div>
+            <h3 className="ui-card-title">Python engine</h3>
+            <p className="ui-card-subtitle">Installed once, shared by every model</p>
           </div>
         </div>
-      )}
+        <div className="ui-card-action">{badge}</div>
+      </Card.Header>
 
-      {isPascal && (
-        <p className="models-env-note" title={`${status?.gpuName} has no bf16 and slow fp16 kernels for some ops, so precision defaults to fp32 compute.`}>
-          <InfoIcon size={13} />
-          Pascal card: setup installs the cu126 torch build and precision defaults to fp32.
-        </p>
-      )}
-
-      {inSetup && (
-        <div className="models-setup">
-          <div className="models-setup-head">
-            <span className="models-setup-phase">{PHASE_LABEL[phase] ?? phase}</span>
-            <ProgressBar pct={progress?.pct ?? 0} indeterminate={!progress} />
-            <span className="models-setup-pct">{Math.round(progress?.pct ?? 0)}%</span>
+      <Card.Body>
+        {uvMissing ? (
+          <div className="models-blocker">
+            <p className="models-blocker-title">
+              <AlertTriangleIcon size={15} />
+              One thing is missing first: uv
+            </p>
+            <p className="models-blocker-text">
+              Local Mesh builds the engine with <strong>uv</strong>, a small installer for Python. Run this in a
+              terminal, then press Check again.
+            </p>
+            <div className="models-code-row">
+              <code className="models-code">{UV_INSTALL}</code>
+              <Button size="sm" variant="subtle" icon={<CopyIcon size={14} />} onClick={() => void copy(UV_INSTALL)}>
+                Copy
+              </Button>
+            </div>
+            <div className="models-blocker-actions">
+              <Button size="sm" variant="primary" icon={<RefreshIcon size={14} />} onClick={() => void actions.refresh()}>
+                Check again
+              </Button>
+              <Button
+                size="sm"
+                variant="subtle"
+                icon={<ExternalLinkIcon size={14} />}
+                onClick={() => window.electronAPI?.openExternal(UV_HOME)}
+              >
+                Other ways to install uv
+              </Button>
+            </div>
           </div>
-          {progress?.message && <p className="models-setup-message">{progress.message}</p>}
-          <SetupLog lines={setupLines} />
-        </div>
-      )}
+        ) : inSetup ? (
+          <div className="models-setup">
+            <p className="models-setup-phase">{PHASE_LABEL[phase] ?? phase}</p>
+            <div className="models-transfer-bar">
+              <ProgressBar pct={progress?.pct ?? 0} indeterminate={!progress} />
+              <span className="models-transfer-pct">{Math.round(progress?.pct ?? 0)}%</span>
+            </div>
+            {progress?.message && (
+              <p className="models-transfer-detail" title={progress.message}>
+                {progress.message}
+              </p>
+            )}
+            <p className="models-note">This runs unattended. You can leave the page, or start a model download while it works.</p>
+            <SetupLog lines={setupLines} />
+          </div>
+        ) : !status ? (
+          <p className="models-lede">Checking what is already installed…</p>
+        ) : status.ready ? (
+          <p className="models-lede">{gpuLine()}</p>
+        ) : needsRepair ? (
+          <p className="models-lede">
+            The engine is here but something in it is broken, so no model can run yet. Repairing reinstalls the parts
+            that failed and keeps every model file you have already downloaded.
+          </p>
+        ) : (
+          <>
+            <p className="models-lede">
+              Nothing is installed yet. This one step puts a private copy of Python and PyTorch inside Local Mesh — the
+              program that actually runs the models. Every model shares it, and nothing is added to the rest of your
+              computer.
+            </p>
+            <p className="models-cost">
+              Several gigabytes to download · a few minutes · kept in{' '}
+              <code className="models-inline-code">{paths?.root ?? '~/.local-mesh'}</code>
+            </p>
+          </>
+        )}
 
-      {status?.lastError && !inSetup && (
-        <p className="models-env-error">
-          <AlertTriangleIcon size={13} />
-          {status.lastError}
-        </p>
-      )}
+        {status?.lastError && !inSetup && !uvMissing && (
+          <p className="models-error">
+            <AlertTriangleIcon size={14} />
+            {status.lastError}
+          </p>
+        )}
+
+        {status && (
+          <Disclosure summary="Technical details">
+            <div className="models-detail-grid">
+              <Detail label="uv" title={status.uvVersion ?? undefined}>
+                {status.uvAvailable ? (status.uvVersion?.split(' ')[0] ?? 'installed') : 'not found'}
+              </Detail>
+              <Detail label="Python">{status.pythonVersion ?? 'not probed yet'}</Detail>
+              <Detail label="PyTorch">{status.torchVersion ?? 'not probed yet'}</Detail>
+              <Detail label="Worker scripts">v{status.scriptsVersion}</Detail>
+              <Detail label="Graphics">
+                {status.cudaAvailable
+                  ? `${status.gpuName ?? 'GPU'} · ${formatGb(status.vramTotalBytes)}`
+                  : status.cudaAvailable === false
+                    ? 'CPU only'
+                    : 'not probed yet'}
+              </Detail>
+              <Detail label="Folder" title={paths?.env}>
+                {status.envExists ? (paths?.env ?? '~/.local-mesh/env') : 'not created'}
+              </Detail>
+            </div>
+            {isPascal && (
+              <p className="models-note">
+                {status.gpuName} is a Pascal-generation card: it has no bf16 and its fp16 kernels are slow for some
+                operations, so Local Mesh installs the CUDA 12.6 build of PyTorch and computes in 32-bit by default.
+                Slower, but correct.
+              </p>
+            )}
+          </Disclosure>
+        )}
+      </Card.Body>
 
       <Card.Footer>
         {paths && (
-          <Button size="sm" variant="subtle" icon={<FolderOpenIcon size={14} />} onClick={() => window.electronAPI?.openPath(paths.root)}>
+          <Button
+            size="sm"
+            variant="subtle"
+            className="models-footer-spacer"
+            icon={<FolderOpenIcon size={14} />}
+            onClick={() => window.electronAPI?.openPath(paths.root)}
+          >
             Open folder
           </Button>
         )}
@@ -169,20 +240,19 @@ export const EnvironmentCard: React.FC = () => {
         )}
         {inSetup ? (
           <Button size="sm" variant="secondary" icon={<CancelIcon size={14} />} onClick={() => actions.cancelSetup()}>
-            Cancel
+            Stop
           </Button>
         ) : (
-          // Once the probe passes there is nothing left to do here: only Remove.
-          !status?.ready && (
+          !status?.ready &&
+          !uvMissing && (
             <Button
               size="sm"
               variant="primary"
               icon={<WrenchIcon size={14} />}
-              disabled={!status || uvMissing}
-              title={uvMissing ? 'Install uv first' : undefined}
-              onClick={() => actions.setup()}
+              disabled={!status}
+              onClick={() => void actions.setup()}
             >
-              {needsRepair ? 'Repair environment' : 'Set up environment'}
+              {needsRepair ? 'Repair the engine' : 'Install the engine'}
             </Button>
           )
         )}
@@ -191,29 +261,35 @@ export const EnvironmentCard: React.FC = () => {
       <Modal
         isOpen={confirmRemove}
         onClose={() => setConfirmRemove(false)}
-        title="Remove the Python environment?"
-        subtitle="Model weights are kept; only the virtualenv is deleted."
+        title="Remove the Python engine?"
+        subtitle="Your downloaded model files are kept."
         icon={<AlertTriangleIcon size={20} />}
         size="sm"
       >
         <Modal.Body>
           <p>
-            Setting it up again means downloading several GB of torch, and every model&apos;s Python dependencies have
-            to be installed again.
+            Putting it back means downloading several gigabytes of PyTorch again, and every model&apos;s extra packages
+            have to be installed a second time.
           </p>
         </Modal.Body>
         <Modal.Footer>
           <Button size="sm" variant="subtle" onClick={() => setConfirmRemove(false)}>
-            Cancel
+            Keep it
           </Button>
           <Button
             size="sm"
             variant="danger"
             icon={<TrashIcon size={14} />}
-            onClick={async () => {
+            onClick={() => {
               setConfirmRemove(false);
-              await actions.remove();
-              toast.success('Environment removed');
+              // envStore.remove does not swallow a rejection, and the modal is
+              // already gone by then: without this the failure is invisible.
+              void actions
+                .remove()
+                .then(() => toast.success('Python engine removed'))
+                .catch((err: unknown) =>
+                  toast.error(err instanceof Error ? err.message : String(err), { title: 'Could not remove the engine' })
+                );
             }}
           >
             Remove

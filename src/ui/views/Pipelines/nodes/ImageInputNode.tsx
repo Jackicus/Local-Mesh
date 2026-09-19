@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import type { ImageInputData } from '../../../../core/pipeline';
 import { Button } from '../../../components';
 import { CloseIcon, ImageIcon } from '../../../assets/icons';
+import { FieldLabel } from '../InfoTip';
 import type { NodeBodyProps } from './types';
 
 const basename = (p: string) => p.split(/[\\/]/).pop() ?? p;
@@ -33,7 +34,10 @@ export const ImageInputNode: React.FC<NodeBodyProps<ImageInputData>> = ({ data, 
       <>
         <p className="pipe-note">Picked at generate time</p>
         <div className="pipe-field">
-          <span className="pipe-field-label">Fixed image (optional)</span>
+          <FieldLabel
+            label="Fixed image (optional)"
+            info="Pins this pipeline to one image, so every run uses it and the Generate view's picker is ignored. Useful for a test rig; leave it empty for normal use."
+          />
           <Button size="sm" variant="secondary" icon={<ImageIcon size={14} />} onClick={choose} disabled={!api} title={api ? undefined : 'Needs the desktop app'}>
             Choose…
           </Button>

@@ -1,37 +1,24 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { ChevronDownIcon } from '../../assets/icons';
+import React, { useEffect, useRef } from 'react';
+import { Disclosure } from './Disclosure';
 
 interface SetupLogProps {
   lines: string[];
 }
 
-/** Raw uv/pip output during environment setup; collapsed by default, follows the tail. */
+/** Raw installer output. Collapsed by default; follows the tail while open. */
 export const SetupLog: React.FC<SetupLogProps> = ({ lines }) => {
-  const [open, setOpen] = useState(false);
   const panelRef = useRef<HTMLPreElement>(null);
 
   useEffect(() => {
     const el = panelRef.current;
-    if (open && el) el.scrollTop = el.scrollHeight;
-  }, [lines, open]);
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [lines]);
 
   return (
-    <div className="models-setup-log">
-      <button
-        type="button"
-        className={`models-setup-log-toggle ${open ? 'open' : ''}`}
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-      >
-        <ChevronDownIcon size={14} className="models-setup-log-chevron" />
-        <span>Setup output</span>
-        <span className="models-setup-log-count">{lines.length} lines</span>
-      </button>
-      {open && (
-        <pre ref={panelRef} className="models-setup-log-panel">
-          {lines.length === 0 ? 'Waiting for output…' : lines.join('\n')}
-        </pre>
-      )}
-    </div>
+    <Disclosure summary="Installer output" meta={`${lines.length} lines`} className="models-log">
+      <pre ref={panelRef} className="models-log-panel">
+        {lines.length === 0 ? 'Waiting for output…' : lines.join('\n')}
+      </pre>
+    </Disclosure>
   );
 };

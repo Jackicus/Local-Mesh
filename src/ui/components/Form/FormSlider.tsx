@@ -9,6 +9,8 @@ export interface FormSliderProps {
   unit?: string;
   showValue?: boolean;
   disabled?: boolean;
+  /** FormRow clones a generated id onto its control child — drop it and the row's <label for> points at nothing */
+  id?: string;
   'aria-label'?: string;
   ariaLabel?: string;
   className?: string;
@@ -23,6 +25,7 @@ export const FormSlider: React.FC<FormSliderProps> = ({
   unit = '',
   showValue = true,
   disabled = false,
+  id,
   'aria-label': ariaLabelAttr,
   ariaLabel,
   className = '',
@@ -35,6 +38,7 @@ export const FormSlider: React.FC<FormSliderProps> = ({
     >
       <input
         type="range"
+        id={id}
         min={min}
         max={max}
         step={step}

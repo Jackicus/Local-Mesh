@@ -81,15 +81,13 @@ export {
   Copy as CopyIcon,
   ClipboardCopy as ClipboardCopyIcon,
   Gauge as GaugeIcon,
-  Filter as FilterIcon,
-  ArrowDownToLine as FollowIcon,
+  ArrowDownToLine as JumpToBottomIcon,
   Wrench as WrenchIcon,
   XCircle as XCircleIcon,
   LoaderCircle as LoaderIcon,
   MemoryStick as MemoryIcon,
   Ban as CancelIcon,
   Eraser as EraserIcon,
-  Rows3 as GroupRowsIcon,
   Unplug as UnplugIcon,
 
   // Pipelines view
@@ -109,9 +107,12 @@ export {
   Power as PowerIcon,
   Shrink as ReduceIcon,
   Waves as SmoothIcon,
+  Scissors as FloatersIcon,
+  Wand2 as CleanIcon,
+  PaintBucket as FillHolesIcon,
+  ArrowUpFromDot as NormalsIcon,
   Undo2 as UndoIcon,
   Timer as TimerIcon,
-
-  // Bottom log dock
-  ChevronUp as ChevronUpIcon,
+  Camera as CameraIcon,
+  GripVertical as GripVerticalIcon,
 } from 'lucide-react';

@@ -1,6 +1,6 @@
 import React from 'react';
 import type { NodeType, Pipeline } from '../../../core/pipeline';
-import { NODE_DEFINITIONS } from '../../../core/pipeline';
+import { isMeshOpNodeType, NODE_DEFINITIONS } from '../../../core/pipeline';
 import { Button, contextMenuStore } from '../../components';
 import { CheckIcon, FitViewIcon, LoaderIcon, PlusIcon } from '../../assets/icons';
 import type { SaveState } from './usePipelineDoc';
@@ -37,16 +37,25 @@ function menuUnder(el: HTMLElement, items: Parameters<typeof contextMenuStore.op
 export const EditorToolbar: React.FC<EditorToolbarProps> = ({ pipeline, saveState, onAddNode, onFit }) => {
   const present = new Set(pipeline.nodes.map((n) => n.type));
 
-  const openAddMenu = (e: React.MouseEvent<HTMLButtonElement>) =>
+  // Mesh ops are their own block: there are six of them, they all chain, and
+  // they read as one family next to the four structural nodes.
+  const openAddMenu = (e: React.MouseEvent<HTMLButtonElement>) => {
+    const defs = Object.values(NODE_DEFINITIONS);
+    const firstOp = defs.findIndex((def) => isMeshOpNodeType(def.type));
+    const afterOps = firstOp + defs.filter((def) => isMeshOpNodeType(def.type)).length;
     menuUnder(
       e.currentTarget,
-      Object.values(NODE_DEFINITIONS).map((def) => ({
-        id: def.type,
-        label: def.label,
-        disabled: def.singleton && present.has(def.type),
-        onClick: () => onAddNode(def.type),
-      }))
+      defs.flatMap((def, i) => [
+        ...(i === firstOp || i === afterOps ? [{ id: `sep-${i}`, label: '', separator: true }] : []),
+        {
+          id: def.type,
+          label: def.label,
+          disabled: def.singleton && present.has(def.type),
+          onClick: () => onAddNode(def.type),
+        },
+      ])
     );
+  };
 
   return (
     <header className="pipe-toolbar">

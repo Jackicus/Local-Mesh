@@ -63,8 +63,20 @@ export class WorkerProcess extends EventEmitter {
         if (line.trim()) wlog.debug(line);
       });
     }
+    // A write that races the worker's exit fails the pipe with EPIPE. An
+    // 'error' with no listener is an uncaught exception in the main process, so
+    // a python crash at the wrong moment would take the app's error handling
+    // with it; the exit path reports the death properly a moment later.
+    this.child.stdin?.on('error', (err) => {
+      wlog.debug(`worker stdin: ${err.message}`);
+    });
     this.child.once('error', (err) => {
-      wlog.error(`worker process error: ${err.message}`);
+      const enoent = (err as NodeJS.ErrnoException).code === 'ENOENT';
+      wlog.error(
+        enoent
+          ? `could not start the python worker: ${opts.python} does not exist. Run Setup in the Models view.`
+          : `could not start the python worker: ${err.message}`
+      );
       this.finish({ code: null, signal: null });
     });
     this.child.once('close', (code, signal) => this.finish({ code, signal }));
@@ -158,12 +170,18 @@ export class WorkerProcess extends EventEmitter {
       } catch {
         // stdin already closed; fall through to the kill below.
       }
+      // The timer is cleared on the winning path too: a pending 5s timeout keeps
+      // the event loop alive, which would stall the app's own quit by that long.
+      let timer: NodeJS.Timeout | undefined;
       const result = await Promise.race([
         done,
-        new Promise<null>((resolve) => setTimeout(() => resolve(null), GRACEFUL_STOP_MS)),
+        new Promise<null>((resolve) => {
+          timer = setTimeout(() => resolve(null), GRACEFUL_STOP_MS);
+        }),
       ]);
+      if (timer) clearTimeout(timer);
       if (result) return result;
-      wlog.warn('worker ignored shutdown; killing it');
+      wlog.warn(`worker did not exit within ${GRACEFUL_STOP_MS / 1000}s of shutdown; killing pid ${this.pid ?? '?'}`);
     }
     this.child.kill('SIGKILL');
     return done;

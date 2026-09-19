@@ -62,10 +62,18 @@ export const PipelinesView: React.FC = () => {
   const addNode = useCallback(
     (type: NodeType) => {
       const c = vp.visibleCenter();
-      update((p) => ({
-        ...p,
-        nodes: [...p.nodes, createNode(type, { x: Math.round(c.x - NODE_W / 2), y: Math.round(c.y - 70) })],
-      }));
+      update((p) => {
+        const spot = { x: Math.round(c.x - NODE_W / 2), y: Math.round(c.y - 70) };
+        // Chaining mesh ops means adding several in a row; cascade them
+        // instead of dropping every one on the same square.
+        const taken = (s: { x: number; y: number }) =>
+          p.nodes.some((n) => Math.abs(n.position.x - s.x) < 24 && Math.abs(n.position.y - s.y) < 24);
+        while (taken(spot)) {
+          spot.x += 32;
+          spot.y += 32;
+        }
+        return { ...p, nodes: [...p.nodes, createNode(type, spot)] };
+      });
     },
     [vp, update]
   );

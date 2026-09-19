@@ -1,5 +1,5 @@
 import React from 'react';
-import { BOTTOM_DOCK_BAR_HEIGHT, useDockStore } from '../stores/dockStore';
+import { useDockStore } from '../stores/dockStore';
 import { TopBar } from './TopBar';
 import { LeftDock } from './LeftDock';
 import { BottomDock } from './BottomDock';
@@ -17,8 +17,9 @@ interface ShellProps {
 export const Shell: React.FC<ShellProps> = ({ children }) => {
   const [dock] = useDockStore();
   // Full-bleed views (Generate, Pipelines) read this to keep their floating
-  // plates clear of the bottom log dock, whether it is a strip or expanded.
-  const bottomInset = dock.bottom.isOpen ? dock.bottom.height : BOTTOM_DOCK_BAR_HEIGHT;
+  // plates clear of the log dock. Closed, the dock is not rendered at all, so
+  // the views get the whole content area back.
+  const bottomInset = dock.bottom.isOpen ? dock.bottom.height : 0;
   return (
     <div className="app-shell" style={{ '--bottomdock-height': `${bottomInset}px` } as React.CSSProperties}>
       {/* The bar's colour, painted below the dock so the dock column rises to

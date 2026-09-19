@@ -26,6 +26,21 @@ export const App: React.FC = () => {
     generationStore.bind();
   }, []);
 
+  // A file dropped anywhere outside a real drop target is otherwise handled by
+  // Electron, which navigates the renderer to that file and takes the running
+  // app with it. The Generate view's own handlers run first on the way up.
+  useEffect(() => {
+    const swallow = (e: DragEvent) => {
+      if (e.dataTransfer?.types.includes('Files')) e.preventDefault();
+    };
+    window.addEventListener('dragover', swallow);
+    window.addEventListener('drop', swallow);
+    return () => {
+      window.removeEventListener('dragover', swallow);
+      window.removeEventListener('drop', swallow);
+    };
+  }, []);
+
   return (
     <ErrorBoundary onReset={() => dockStore.setActiveItem('generate')}>
       <Shell>

@@ -372,11 +372,11 @@
 
   .ui-context-menu-item:hover:not(:disabled) {
     background-color: var(--accent);
-    color: #ffffff;
+    color: var(--accent-text, #ffffff);
   }
 
   .ui-context-menu-item:hover:not(:disabled) .ui-context-menu-shortcut {
-    color: rgba(255, 255, 255, 0.85);
+    color: oklch(from var(--accent-text, #ffffff) l c h / 0.85);
   }
 
   .ui-context-menu-item.danger {

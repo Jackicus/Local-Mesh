@@ -29,7 +29,6 @@
     /* Layout Metrics */
     --topbar-height: 44px;
     --leftdock-width: 240px;
-    --bottomdock-bar-height: 30px;
 
     /* Component Sizing & Layout Constants */
     --form-control-width: 280px;
@@ -87,7 +86,10 @@
 
     --text-primary: #1a1a1a;
     --text-secondary: #4d4d4d;
-    --text-muted: #808080;
+    /* Every other text token flips with the theme; muted carried the dark
+       value over, which only reached 3.5:1 on the light ground (it is used at
+       0.786rem in log rows and fact values). 4.8:1 keeps the same voice. */
+    --text-muted: #6b6b6b;
 
     --success: #059669;
     --warning: #d97706;

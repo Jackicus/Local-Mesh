@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { ExportFormat, OutputItem } from '../core/types';
+import { formatBytes } from './format';
 import { log } from './logger';
 import { getPaths, isInside } from './paths';
 import { getState } from './queueState';
@@ -54,7 +55,13 @@ export function deleteOutput(file: string): boolean {
     throw new Error('Only files inside the outputs folder can be deleted.');
   }
   if (!fs.existsSync(file)) return false;
+  let size = 0;
+  try {
+    size = fs.statSync(file).size;
+  } catch {
+    // Vanished between the check and the stat; the message just loses its size.
+  }
   fs.rmSync(file);
-  log.general.info(`output deleted: ${path.basename(file)}`);
+  log.general.info(`output deleted: ${path.basename(file)}${size ? ` (${formatBytes(size)})` : ''}`);
   return true;
 }

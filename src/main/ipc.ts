@@ -1,4 +1,5 @@
-import { ipcMain } from 'electron';
+import { app, ipcMain } from 'electron';
+import path from 'node:path';
 import { IPC_CHANNELS, LOG_CHANNELS, LOG_LEVELS } from '../core/types';
 import type {
   AppSettings,
@@ -16,7 +17,7 @@ import {
   removeEnv,
   setupEnv,
 } from './envManager';
-import { clearLogs, log, readLogs, write as writeLog } from './logger';
+import { clearLogs, log, readLogs, wasReported, write as writeLog } from './logger';
 import {
   cancelModelDownload,
   deleteModel,
@@ -27,6 +28,7 @@ import {
 import { deleteOutput, listOutputs } from './outputs';
 import {
   getPaths,
+  isInside,
   openExternal,
   openPath,
   pickImages,
@@ -39,10 +41,12 @@ import { errorMessage } from './proc';
 import {
   cancelGeneration,
   clearFinishedJobs,
+  dismissJob,
   enqueue,
   loadModel,
   onSettingsChanged,
   processMesh,
+  reorderQueue,
   stopWorker,
   unloadModel,
 } from './queue';
@@ -52,8 +56,34 @@ import { getSettings, setSettings } from './settings';
 /**
  * Every renderer-facing handler in one place. Each one rethrows a plain,
  * readable Error so the renderer never sees an internal stack, and logs the
- * failure to the general channel (which mirrors it into errors.log).
+ * failure (which mirrors it into errors.log).
+ *
+ * Two rules keep that log readable. Anything the queue or the worker owns is
+ * logged on `generation`, everything else on `general`. And an operation that
+ * already logged its own failure — with the model id or request id only it
+ * knows — is not logged a second time here just because it unwound this far.
  */
+
+/** `gen:*` and `outputs:process` are worker work; the rest is app surface. */
+function channelFor(channel: string): 'general' | 'generation' {
+  return channel.startsWith('gen:') || channel === IPC_CHANNELS.OUTPUTS_PROCESS ? 'generation' : 'general';
+}
+
+/**
+ * `shell.openPath` / `shell.showItemInFolder` hand a path to the desktop's file
+ * association handler — on a .desktop file or a binary that is execution. The
+ * renderer only ever asks for directories and files the app itself produced, so
+ * the argument is confined to ~/.local-mesh and the (read-only) app bundle
+ * rather than trusted as given.
+ */
+function assertRevealable(target: unknown): string {
+  if (typeof target !== 'string' || !target) throw new Error('No path given.');
+  const resolved = path.resolve(target);
+  const roots = [getPaths().root, app.getAppPath()];
+  const allowed = roots.some((root) => resolved === path.resolve(root) || isInside(root, resolved));
+  if (!allowed) throw new Error('That path is outside the Local Mesh directory.');
+  return resolved;
+}
 
 function handle<Args extends unknown[], Result>(
   channel: string,
@@ -64,7 +94,7 @@ function handle<Args extends unknown[], Result>(
       return await fn(...(args as Args));
     } catch (err) {
       const message = errorMessage(err);
-      log.general.error(`${channel}: ${message}`);
+      if (!wasReported(err)) log[channelFor(channel)].error(`${channel} failed: ${message}`);
       throw new Error(message);
     }
   });
@@ -73,8 +103,8 @@ function handle<Args extends unknown[], Result>(
 export function registerAllHandlers(): void {
   // ~/.local-mesh layout, shell helpers, file dialogs
   handle(IPC_CHANNELS.PATHS_GET, () => getPaths());
-  handle(IPC_CHANNELS.SHELL_OPEN_PATH, (target: string) => openPath(target));
-  handle(IPC_CHANNELS.SHELL_SHOW_ITEM, (target: string) => showItemInFolder(target));
+  handle(IPC_CHANNELS.SHELL_OPEN_PATH, (target: string) => openPath(assertRevealable(target)));
+  handle(IPC_CHANNELS.SHELL_SHOW_ITEM, (target: string) => showItemInFolder(assertRevealable(target)));
   handle(IPC_CHANNELS.SHELL_OPEN_EXTERNAL, (url: string) => openExternal(url));
   handle(IPC_CHANNELS.DIALOG_PICK_IMAGES, () => pickImages());
   handle(IPC_CHANNELS.FILE_READ_IMAGE_DATA_URL, (file: string) => readImageDataUrl(file));
@@ -116,6 +146,8 @@ export function registerAllHandlers(): void {
   handle(IPC_CHANNELS.GEN_STATE, () => getState());
   handle(IPC_CHANNELS.GEN_ENQUEUE, (request: GenerationJobRequest) => enqueue(request));
   handle(IPC_CHANNELS.GEN_CANCEL, (jobId: string) => cancelGeneration(jobId));
+  handle(IPC_CHANNELS.GEN_REORDER, (jobId: string, toIndex: number) => reorderQueue(jobId, toIndex));
+  handle(IPC_CHANNELS.GEN_DISMISS, (jobId: string) => dismissJob(jobId));
   handle(IPC_CHANNELS.GEN_CLEAR_FINISHED, () => clearFinishedJobs());
   handle(IPC_CHANNELS.GEN_LOAD_MODEL, (modelId: string) => loadModel(modelId));
   handle(IPC_CHANNELS.GEN_UNLOAD_MODEL, () => unloadModel());

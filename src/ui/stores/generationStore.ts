@@ -43,8 +43,22 @@ export const generationStore = {
     const electron = api();
     if (bound || !electron) return;
     bound = true;
-    electron.onGenerationState((state) => store.setState({ ...state, hydrated: true }));
-    electron.getGenerationState().then((state) => store.setState({ ...state, hydrated: true }));
+    // A push that lands while the initial invoke is in flight is newer than the
+    // snapshot that invoke will resolve with; without this flag the stale
+    // snapshot would overwrite it and the queue would show the wrong state
+    // until the next change happened to arrive.
+    let pushed = false;
+    electron.onGenerationState((state) => {
+      pushed = true;
+      store.setState({ ...state, hydrated: true });
+    });
+    electron.getGenerationState().then((state) => {
+      if (pushed) {
+        store.setState({ hydrated: true });
+        return;
+      }
+      store.setState({ ...state, hydrated: true });
+    });
   },
 
   enqueue: async (request: GenerationJobRequest): Promise<string[]> => {
@@ -81,6 +95,10 @@ export const generationStore = {
   },
 
   cancel: (jobId: string) => api()?.cancelGeneration(jobId),
+  /** Move a queued job to `toIndex` among the queued jobs; main broadcasts the new order. */
+  reorder: (jobId: string, toIndex: number) => api()?.reorderGeneration(jobId, toIndex),
+  /** Drop one finished job from the queue; cancel() first if it is still running. */
+  dismiss: (jobId: string) => api()?.dismissGeneration(jobId),
   clearFinished: () => api()?.clearFinishedJobs(),
   loadModel: (modelId: string) => api()?.loadModel(modelId),
   unloadModel: () => api()?.unloadModel(),

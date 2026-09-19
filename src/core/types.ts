@@ -86,6 +86,10 @@ export interface ElectronAPI {
   getGenerationState: () => Promise<GenerationState>;
   enqueueGeneration: (request: GenerationJobRequest) => Promise<string[]>;
   cancelGeneration: (jobId: string) => Promise<void>;
+  /** Move a queued job to `toIndex` among the queued jobs. No-op for running or finished ones. */
+  reorderGeneration: (jobId: string, toIndex: number) => Promise<boolean>;
+  /** Drop one finished job from the queue snapshot. Refuses while it is queued or running. */
+  dismissGeneration: (jobId: string) => Promise<boolean>;
   clearFinishedJobs: () => Promise<void>;
   loadModel: (modelId: string) => Promise<void>;
   unloadModel: () => Promise<void>;
@@ -161,6 +165,8 @@ export const IPC_CHANNELS = {
   GEN_STATE: 'gen:state',
   GEN_ENQUEUE: 'gen:enqueue',
   GEN_CANCEL: 'gen:cancel',
+  GEN_REORDER: 'gen:reorder',
+  GEN_DISMISS: 'gen:dismiss',
   GEN_CLEAR_FINISHED: 'gen:clearFinished',
   GEN_LOAD_MODEL: 'gen:loadModel',
   GEN_UNLOAD_MODEL: 'gen:unloadModel',

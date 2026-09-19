@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { CLAUDE_MD_DIRS, IPC_CHANNELS } from '../core/types';
 import { killEnvChildren } from './envManager';
+import { since } from './format';
 import { registerAllHandlers } from './ipc';
 import { initLogger, installCrashLogging, log } from './logger';
 import { killDownloadChildren } from './modelManager';
@@ -100,7 +101,9 @@ function saveWindowState(targetWin: BrowserWindow) {
 
     fs.writeFileSync(getWindowStatePath(), JSON.stringify(state, null, 2), 'utf-8');
   } catch (err) {
-    console.error('Failed to save window state:', err);
+    // Debug, not warn: the window simply reopens at its default size, and this
+    // fires on every resize, so a failing disk would flood the log.
+    log.general.debug(`could not save window-state.json: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 
@@ -163,7 +166,9 @@ function registerClaudeMdHandlers() {
       fs.writeFileSync(filePath, content, 'utf-8');
       return true;
     } catch (err) {
-      console.error(`Failed to write ${filePath}:`, err);
+      log.general.error(
+        `could not write src/ui/${dir}/CLAUDE.md: ${err instanceof Error ? err.message : String(err)}`
+      );
       return false;
     }
   });
@@ -229,6 +234,24 @@ function createWindow() {
     triggerSave();
   });
 
+  // A renderer that fails to load or dies leaves a blank window and no other
+  // trace; these three listeners are the only record of it.
+  win.webContents.on('did-fail-load', (_event, code, description, url) => {
+    // -3 is ERR_ABORTED, which every cancelled in-page navigation reports.
+    if (code === -3) return;
+    log.general.error(`renderer failed to load ${url || '(no url)'}: ${description} (${code})`);
+  });
+
+  win.webContents.on('render-process-gone', (_event, details) => {
+    log.general.error(
+      `renderer process gone: ${details.reason}${details.exitCode ? ` (exit ${details.exitCode})` : ''}`
+    );
+  });
+
+  win.on('unresponsive', () => {
+    log.general.warn('the window stopped responding');
+  });
+
   // Intercept and securely open external links in user default browser
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('https:') || url.startsWith('http:') || url.startsWith('mailto:')) {
@@ -254,14 +277,19 @@ function createWindow() {
 }
 
 // Single instance: a second launch focuses the existing window instead
-if (!app.requestSingleInstanceLock()) {
+const isPrimaryInstance = app.requestSingleInstanceLock();
+
+if (!isPrimaryInstance) {
   app.quit();
 } else {
   app.on('second-instance', () => {
-    if (win) {
-      if (win.isMinimized()) win.restore();
-      win.focus();
+    if (!win || win.isDestroyed()) {
+      createWindow();
+      return;
     }
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
   });
 }
 
@@ -281,40 +309,94 @@ app.on('activate', () => {
 // Quitting has to wait for the python worker to stop, so the first `before-quit`
 // is deferred and re-issued once shutdown has run (or timed out).
 const SHUTDOWN_TIMEOUT_MS = 8000;
-let shuttingDown = false;
+let shutdown: Promise<void> | null = null;
+let quitRequested = false;
 let readyToQuit = false;
+
+/**
+ * Stop the worker and anything else in flight. Idempotent: every caller gets
+ * the same promise, so a `before-quit` that races a signal (or a signal that
+ * arrives twice) never starts a second teardown.
+ */
+function beginShutdown(): Promise<void> {
+  if (shutdown) return shutdown;
+  const startedAt = Date.now();
+  log.general.info('shutting down: stopping the worker and any setup or download in flight');
+  killEnvChildren();
+  killDownloadChildren();
+  shutdown = new Promise<void>((resolve) => {
+    const guard = setTimeout(() => {
+      log.general.warn(`shutdown did not finish within ${SHUTDOWN_TIMEOUT_MS / 1000}s; quitting anyway`);
+      resolve();
+    }, SHUTDOWN_TIMEOUT_MS);
+    shutdownQueue().finally(() => {
+      clearTimeout(guard);
+      log.general.info(`shutdown complete in ${since(startedAt)}`);
+      resolve();
+    });
+  });
+  return shutdown;
+}
+
+function shutdownThenQuit(): void {
+  if (quitRequested) return;
+  quitRequested = true;
+  void beginShutdown().then(() => {
+    readyToQuit = true;
+    app.quit();
+  });
+}
 
 app.on('before-quit', (event) => {
   if (readyToQuit) return;
   event.preventDefault();
-  if (shuttingDown) return;
-  shuttingDown = true;
-  log.general.info('shutting down');
-  killEnvChildren();
-  killDownloadChildren();
-  const finish = () => {
-    readyToQuit = true;
-    app.quit();
-  };
-  const guard = setTimeout(finish, SHUTDOWN_TIMEOUT_MS);
-  shutdownQueue().finally(() => {
-    clearTimeout(guard);
-    finish();
-  });
+  shutdownThenQuit();
 });
 
+/**
+ * Ctrl-C in `npm run dev` (and a `kill` from a supervisor) never reaches
+ * `before-quit`, so without this the python worker is orphaned. Same path as a
+ * normal quit; a second signal while it runs is ignored, and a third gives up
+ * and exits hard.
+ */
+function installSignalHandlers(): void {
+  let signalled = 0;
+  for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+    process.on(signal, () => {
+      signalled += 1;
+      if (signalled > 2) {
+        log.general.warn(`${signal} again; exiting immediately`);
+        app.exit(1);
+        return;
+      }
+      log.general.info(`received ${signal}; shutting down`);
+      shutdownThenQuit();
+    });
+  }
+}
+
 app.whenReady().then(() => {
+  // `app.quit()` on a losing second instance is asynchronous, so `ready` can
+  // still fire in that process. Without this guard it would create a window,
+  // start a logger and touch ~/.local-mesh on its way out.
+  if (!isPrimaryInstance) return;
   ensureTree();
   initLogger(getPaths().logs);
   installCrashLogging();
+  // The one line that has to be complete: every bug report starts here.
   log.general.info(
-    `Local Mesh v${app.getVersion()} started — electron ${process.versions.electron}, ${process.platform}, root ${getPaths().root}`
+    `local mesh ${app.getVersion()} started — electron ${process.versions.electron}, node ${process.versions.node}, ` +
+      `${process.platform} ${process.arch}, root ${getPaths().root}`
   );
   try {
     ensureDefaultPipeline();
   } catch (err) {
-    log.general.error(`startup task failed: ${err instanceof Error ? err.message : String(err)}`);
+    log.general.error(
+      `could not create the default pipeline: ${err instanceof Error ? err.message : String(err)}. ` +
+        'Create one in the Pipelines view before generating.'
+    );
   }
+  installSignalHandlers();
   registerIpcHandlers();
   registerAllHandlers();
   if (VITE_DEV_SERVER_URL) {

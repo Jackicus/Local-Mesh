@@ -6,13 +6,223 @@ import type { DevicePreference, PrecisionPreference } from './env';
  */
 export type ExportFormat = 'glb' | 'obj' | 'stl' | 'ply';
 
-export interface PostProcessSpec {
-  removeFloaters: boolean;
-  removeDegenerateFaces: boolean;
-  /** Decimate to at most this many faces (null = keep). */
-  maxFaces: number | null;
-  /** Smooth normals in the export. */
-  smoothNormals: boolean;
+// ---------------------------------------------------------------------------
+// Mesh operations
+//
+// One vocabulary for both places a mesh gets edited: the post-process nodes a
+// pipeline compiles into `GenerationJobSpec.postProcess`, and the tools in the
+// Generate view acting on a finished output. Same ops, same options, same
+// python implementations - only the mesh they start from differs.
+// ---------------------------------------------------------------------------
+
+export type MeshOpKind =
+  | 'remove-floaters'
+  | 'remove-degenerate'
+  | 'fill-holes'
+  | 'decimate'
+  | 'smooth'
+  | 'recompute-normals';
+
+/** Drop connected components smaller than `threshold` of the largest one. */
+export interface RemoveFloatersOp {
+  op: 'remove-floaters';
+  /** 0-1; 0.1 keeps anything at least a tenth the size of the biggest part. */
+  threshold: number;
+}
+
+/** Drop zero-area faces, optionally welding duplicate vertices first. */
+export interface RemoveDegenerateOp {
+  op: 'remove-degenerate';
+  mergeVertices: boolean;
+}
+
+/** Close small boundary loops (triangulated fans). */
+export interface FillHolesOp {
+  op: 'fill-holes';
+}
+
+/** Quadric decimation, to a fraction of the current count or a hard cap. */
+export interface DecimateOp {
+  op: 'decimate';
+  mode: 'ratio' | 'faces';
+  /** Fraction of the current face count, used when mode is 'ratio'. */
+  ratio: number;
+  /** Face cap, used when mode is 'faces'; a mesh already under it is left alone. */
+  maxFaces: number;
+}
+
+/** Taubin smoothing: volume-preserving, unlike plain Laplacian. */
+export interface SmoothOp {
+  op: 'smooth';
+  iterations: number;
+}
+
+/** Recompute face/vertex normals and fix winding. */
+export interface RecomputeNormalsOp {
+  op: 'recompute-normals';
+}
+
+export type MeshOp =
+  | RemoveFloatersOp
+  | RemoveDegenerateOp
+  | FillHolesOp
+  | DecimateOp
+  | SmoothOp
+  | RecomputeNormalsOp;
+
+export const MAX_SMOOTH_ITERATIONS = 200;
+export const MIN_DECIMATE_FACES = 100;
+
+export interface MeshOpDefinition {
+  kind: MeshOpKind;
+  /** Pipeline node title. */
+  label: string;
+  /** Generate-view toolbar label, kept short enough for the plate. */
+  short: string;
+  description: string;
+  /** Appended to the file stem when the op runs as a tool. */
+  suffix: string;
+  defaults: () => MeshOp;
+}
+
+/** Canonical order: how the node palette and the mesh toolbar list the ops. */
+export const MESH_OP_KINDS: MeshOpKind[] = [
+  'remove-floaters',
+  'remove-degenerate',
+  'fill-holes',
+  'decimate',
+  'smooth',
+  'recompute-normals',
+];
+
+export const MESH_OP_DEFINITIONS: Record<MeshOpKind, MeshOpDefinition> = {
+  'remove-floaters': {
+    kind: 'remove-floaters',
+    label: 'Remove Floaters',
+    short: 'Floaters',
+    description: 'Keeps the main body and drops the loose fragments floating around it.',
+    suffix: 'floaters',
+    defaults: (): RemoveFloatersOp => ({ op: 'remove-floaters', threshold: 0.1 }),
+  },
+  'remove-degenerate': {
+    kind: 'remove-degenerate',
+    label: 'Remove Degenerate Faces',
+    short: 'Clean',
+    description: 'Drops zero-area faces and the stray vertices left behind.',
+    suffix: 'cleaned',
+    defaults: (): RemoveDegenerateOp => ({ op: 'remove-degenerate', mergeVertices: true }),
+  },
+  'fill-holes': {
+    kind: 'fill-holes',
+    label: 'Fill Holes',
+    short: 'Holes',
+    description: 'Closes small gaps in the surface. Large openings are left alone.',
+    suffix: 'filled',
+    defaults: (): FillHolesOp => ({ op: 'fill-holes' }),
+  },
+  decimate: {
+    kind: 'decimate',
+    label: 'Decimate',
+    short: 'Reduce',
+    description: 'Cuts the face count down, by ratio or to a hard cap.',
+    suffix: 'reduced',
+    defaults: (): DecimateOp => ({ op: 'decimate', mode: 'faces', ratio: 0.5, maxFaces: 50000 }),
+  },
+  smooth: {
+    kind: 'smooth',
+    label: 'Smooth',
+    short: 'Smooth',
+    description: 'Taubin smoothing: softens stair-stepping without shrinking the shape.',
+    suffix: 'smooth',
+    defaults: (): SmoothOp => ({ op: 'smooth', iterations: 15 }),
+  },
+  'recompute-normals': {
+    kind: 'recompute-normals',
+    label: 'Recompute Normals',
+    short: 'Normals',
+    description: 'Rebuilds normals and winding, fixing dark or inside-out shading.',
+    suffix: 'normals',
+    defaults: (): RecomputeNormalsOp => ({ op: 'recompute-normals' }),
+  },
+};
+
+export function isMeshOpKind(value: unknown): value is MeshOpKind {
+  return typeof value === 'string' && value in MESH_OP_DEFINITIONS;
+}
+
+function numberOr(value: unknown, fallback: number): number {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+/**
+ * Coerce loose JSON (node data, an IPC payload) into a valid op. Throws with a
+ * message meant for a toast; the renderer, main and the worker all run it, so
+ * a bad value is rejected at every boundary rather than reaching trimesh.
+ */
+export function normalizeMeshOp(raw: unknown): MeshOp {
+  const value = (raw ?? {}) as Record<string, unknown>;
+  const kind = value['op'];
+  if (!isMeshOpKind(kind)) throw new Error(`Unknown mesh operation "${String(kind)}".`);
+  switch (kind) {
+    case 'remove-floaters': {
+      const threshold = numberOr(value['threshold'], 0.1);
+      if (threshold <= 0 || threshold > 1) {
+        throw new Error('Remove Floaters needs a threshold above 0 and at most 1.');
+      }
+      return { op: 'remove-floaters', threshold };
+    }
+    case 'remove-degenerate':
+      return { op: 'remove-degenerate', mergeVertices: value['mergeVertices'] !== false };
+    case 'fill-holes':
+      return { op: 'fill-holes' };
+    case 'decimate': {
+      const mode = value['mode'] === 'ratio' ? 'ratio' : 'faces';
+      const ratio = numberOr(value['ratio'], 0.5);
+      const maxFaces = Math.round(numberOr(value['maxFaces'], 50000));
+      if (mode === 'ratio' && !(ratio > 0 && ratio < 1)) {
+        throw new Error('Decimate needs a ratio strictly between 0 and 1.');
+      }
+      if (mode === 'faces' && maxFaces < MIN_DECIMATE_FACES) {
+        throw new Error(`Decimate needs a face cap of at least ${MIN_DECIMATE_FACES}.`);
+      }
+      return { op: 'decimate', mode, ratio, maxFaces };
+    }
+    case 'smooth': {
+      const iterations = Math.round(numberOr(value['iterations'], 15));
+      if (iterations < 1 || iterations > MAX_SMOOTH_ITERATIONS) {
+        throw new Error(`Smooth needs an iteration count between 1 and ${MAX_SMOOTH_ITERATIONS}.`);
+      }
+      return { op: 'smooth', iterations };
+    }
+    case 'recompute-normals':
+      return { op: 'recompute-normals' };
+  }
+}
+
+export function normalizeMeshOps(raw: unknown): MeshOp[] {
+  if (!Array.isArray(raw)) throw new Error('`ops` must be a list of mesh operations.');
+  return raw.map(normalizeMeshOp);
+}
+
+/** One-line summary for logs and tooltips. */
+export function describeMeshOp(op: MeshOp): string {
+  switch (op.op) {
+    case 'remove-floaters':
+      return `remove floaters below ${Math.round(op.threshold * 100)}%`;
+    case 'remove-degenerate':
+      return op.mergeVertices ? 'remove degenerate faces (merging vertices)' : 'remove degenerate faces';
+    case 'fill-holes':
+      return 'fill holes';
+    case 'decimate':
+      return op.mode === 'ratio'
+        ? `decimate to ${Math.round(op.ratio * 100)}%`
+        : `decimate to ${op.maxFaces} faces`;
+    case 'smooth':
+      return `smooth x${op.iterations}`;
+    case 'recompute-normals':
+      return 'recompute normals';
+  }
 }
 
 export interface GenerationJobSpec {
@@ -23,7 +233,8 @@ export interface GenerationJobSpec {
   removeBackground: boolean;
   /** Model settings; keys come from ModelDefinition.settings. Seed already resolved (never -1). */
   settings: Record<string, number | string | boolean>;
-  postProcess: PostProcessSpec;
+  /** Ordered post-process chain, compiled from the pipeline's op nodes. */
+  postProcess: MeshOp[];
   export: {
     format: ExportFormat;
     /** Absolute directory (outputs/). */
@@ -38,7 +249,7 @@ export type JobStatus = 'queued' | 'loading' | 'running' | 'done' | 'failed' | '
 export interface JobProgress {
   /** 0-100 */
   pct: number;
-  /** Short machine-ish stage id: "load", "condition", "diffusion", "decode", "postprocess", "export". */
+  /** Short machine-ish stage id: "load", "condition", "diffusion", "decode", a MeshOpKind, "export". */
   stage: string;
   message: string;
 }
@@ -81,20 +292,14 @@ export type WorkerStatus =
   | 'error';
 
 // ---------------------------------------------------------------------------
-// Mesh post-processing on an existing output (Generate view tools). Runs in
+// Running those ops on an existing output (Generate view tools). Handled by
 // the python worker with trimesh; no model needs to be loaded.
 // ---------------------------------------------------------------------------
-
-export type MeshProcessOp =
-  /** Decimate to `ratio` of the current face count (0 < ratio < 1). */
-  | { op: 'decimate'; ratio: number }
-  /** Taubin smoothing (volume-preserving), `iterations` passes. */
-  | { op: 'smooth'; iterations: number };
 
 export interface MeshProcessRequest {
   /** Absolute path under outputs/. */
   inputPath: string;
-  ops: MeshProcessOp[];
+  ops: MeshOp[];
 }
 
 export interface MeshProcessResult {
@@ -107,7 +312,7 @@ export interface MeshProcessResult {
 /** Live progress of the one in-flight mesh process request, for the HUD. */
 export interface MeshProcessProgress {
   requestId: string;
-  /** "load" | "decimate" | "smooth" | "export" */
+  /** "load" | "export" | a MeshOpKind */
   stage: string;
   /** 0-100 */
   pct: number;
@@ -177,7 +382,7 @@ export type WorkerCommand =
       input: string;
       /** Absolute output path including extension; the worker unique-ifies the stem if it exists. */
       output: string;
-      ops: MeshProcessOp[];
+      ops: MeshOp[];
     }
   | { cmd: 'cancel'; job_id: string }
   | { cmd: 'memory' }

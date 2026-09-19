@@ -35,6 +35,9 @@ export const logStore = {
     if (bound || !electron) return;
     bound = true;
     electron.onLogEntry((entry) => {
+      // An entry on a channel this build doesn't know about would push onto
+      // `undefined` and throw inside the IPC listener, killing every later push.
+      if (!entry || !(entry.channel in store.getState().entries)) return;
       store.setState((prev) => ({
         entries: { ...prev.entries, [entry.channel]: push(prev.entries[entry.channel], entry) },
         unseenErrors: entry.channel === 'errors' ? prev.unseenErrors + 1 : prev.unseenErrors,

@@ -40,14 +40,18 @@ export const modelStore = {
         if (event.status === 'done') toast.success(`${name}: ${what}`);
         if (event.status === 'failed') toast.error(event.error ?? `${event.kind === 'deps' ? 'Install' : 'Download'} failed`, { title: name });
         void refresh();
-        // Leave the terminal state visible briefly, then drop it.
-        setTimeout(() => {
-          store.setState((prev) => {
-            if (prev.downloads[event.modelId]?.status !== event.status) return {};
-            const { [event.modelId]: _dropped, ...rest } = prev.downloads;
-            return { downloads: rest };
-          });
-        }, 4000);
+        // Leave the terminal state visible briefly, then drop it — except a
+        // failure, which stays until the next attempt: once the toast has gone
+        // the card is the only place the reason is still readable.
+        if (event.status !== 'failed') {
+          setTimeout(() => {
+            store.setState((prev) => {
+              if (prev.downloads[event.modelId]?.status !== event.status) return {};
+              const { [event.modelId]: _dropped, ...rest } = prev.downloads;
+              return { downloads: rest };
+            });
+          }, 4000);
+        }
       }
     });
     void refresh();
@@ -55,9 +59,18 @@ export const modelStore = {
 
   refresh,
 
+  /** Drop a finished/failed progress entry, so a retry starts from a clean slate. */
+  forgetDownload: (modelId: string) =>
+    store.setState((prev) => {
+      if (!prev.downloads[modelId]) return {};
+      const { [modelId]: _dropped, ...rest } = prev.downloads;
+      return { downloads: rest };
+    }),
+
   download: async (modelId: string) => {
     const electron = api();
     if (!electron) return;
+    modelStore.forgetDownload(modelId);
     try {
       await electron.downloadModel(modelId);
     } catch (err) {
@@ -68,6 +81,7 @@ export const modelStore = {
   installDeps: async (modelId: string) => {
     const electron = api();
     if (!electron) return;
+    modelStore.forgetDownload(modelId);
     try {
       await electron.installModelDeps(modelId);
     } catch (err) {

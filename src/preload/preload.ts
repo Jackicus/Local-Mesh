@@ -73,6 +73,9 @@ const electronAPI: ElectronAPI = {
   enqueueGeneration: (request: GenerationJobRequest) =>
     ipcRenderer.invoke(IPC_CHANNELS.GEN_ENQUEUE, request),
   cancelGeneration: (jobId: string) => ipcRenderer.invoke(IPC_CHANNELS.GEN_CANCEL, jobId),
+  reorderGeneration: (jobId: string, toIndex: number) =>
+    ipcRenderer.invoke(IPC_CHANNELS.GEN_REORDER, jobId, toIndex),
+  dismissGeneration: (jobId: string) => ipcRenderer.invoke(IPC_CHANNELS.GEN_DISMISS, jobId),
   clearFinishedJobs: () => ipcRenderer.invoke(IPC_CHANNELS.GEN_CLEAR_FINISHED),
   loadModel: (modelId: string) => ipcRenderer.invoke(IPC_CHANNELS.GEN_LOAD_MODEL, modelId),
   unloadModel: () => ipcRenderer.invoke(IPC_CHANNELS.GEN_UNLOAD_MODEL),

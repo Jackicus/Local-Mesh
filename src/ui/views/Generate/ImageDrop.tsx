@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { Button } from '../../components';
 import { ImagePlusIcon } from '../../assets/icons';
 import { api } from '../../stores/createStore';
-import { DockSection } from './DockSection';
 import { Thumbnail } from './Thumbnail';
 import { useViewerStore } from './viewerStore';
 
@@ -23,23 +22,13 @@ export async function pickImages(): Promise<string[]> {
   return (await api()?.pickImages()) ?? [];
 }
 
-/** Staging for the sources: one job will be queued per image here. */
+/** The composer's input box: one job will be queued per image staged here. */
 export const ImageDrop: React.FC = () => {
   const [viewer, viewerActions] = useViewerStore();
   const [over, setOver] = useState(false);
 
   return (
-    <DockSection
-      title="Images"
-      meta={viewer.images.length || undefined}
-      action={
-        viewer.images.length > 0 ? (
-          <Button variant="subtle" size="sm" onClick={viewerActions.clearImages}>
-            Clear
-          </Button>
-        ) : undefined
-      }
-    >
+    <div className="gen-images">
       {/* The view itself handles the drop for the whole window; this zone only
           says where to aim, so it must not swallow the event. */}
       <div
@@ -52,7 +41,7 @@ export const ImageDrop: React.FC = () => {
         onDrop={() => setOver(false)}
       >
         <ImagePlusIcon size={18} />
-        <p className="gen-drop-title">Drop images here</p>
+        <p className="gen-drop-title">Drop images anywhere</p>
         <p className="gen-drop-hint">One mesh per image</p>
       </div>
 
@@ -64,14 +53,20 @@ export const ImageDrop: React.FC = () => {
         </div>
       )}
 
-      <Button
-        variant="secondary"
-        size="sm"
-        fullWidth
-        onClick={async () => viewerActions.addImages(await pickImages())}
-      >
-        Choose images
-      </Button>
-    </DockSection>
+      <div className="ui-btn-row">
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={async () => viewerActions.addImages(await pickImages())}
+        >
+          Choose images
+        </Button>
+        {viewer.images.length > 0 && (
+          <Button variant="subtle" size="sm" onClick={viewerActions.clearImages}>
+            Clear
+          </Button>
+        )}
+      </div>
+    </div>
   );
 };

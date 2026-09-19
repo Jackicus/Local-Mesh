@@ -30,7 +30,9 @@ export const Toast: React.FC<ToastProps> = ({ toast }) => {
   return (
     <div
       className={`ui-toast-item ui-toast-${toast.type} ${toast.exiting ? 'exiting' : ''}`}
-      role="alert"
+      // No role="alert" here: that is a live region of its own, nested inside
+      // the container's aria-live, which makes screen readers announce each
+      // toast twice. The container is the single announcer.
     >
       <div className="ui-toast-leading">{getIcon()}</div>
 

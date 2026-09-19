@@ -1,4 +1,4 @@
-import { Component, ErrorInfo, ReactNode } from 'react';
+import { Component, ErrorInfo, Fragment, ReactNode } from 'react';
 import { Card, Button, Badge } from '..';
 import { AlertCircleIcon, RefreshIcon, HomeIcon } from '../../assets/icons';
 
@@ -12,6 +12,8 @@ interface State {
   hasError: boolean;
   error: Error | null;
   errorInfo: ErrorInfo | null;
+  /** Bumped by Reset View: remounts the subtree so the failed render starts from scratch */
+  resetKey: number;
 }
 
 export class ErrorBoundary extends Component<Props, State> {
@@ -19,9 +21,10 @@ export class ErrorBoundary extends Component<Props, State> {
     hasError: false,
     error: null,
     errorInfo: null,
+    resetKey: 0,
   };
 
-  public static getDerivedStateFromError(error: Error): State {
+  public static getDerivedStateFromError(error: Error): Partial<State> {
     return { hasError: true, error, errorInfo: null };
   }
 
@@ -31,7 +34,14 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   private handleReset = () => {
-    this.setState({ hasError: false, error: null, errorInfo: null });
+    // Clearing the flag alone re-renders the same element tree, which throws
+    // again on the spot; the key bump discards the broken subtree's state too
+    this.setState((prev) => ({
+      hasError: false,
+      error: null,
+      errorInfo: null,
+      resetKey: prev.resetKey + 1,
+    }));
     this.props.onReset?.();
   };
 
@@ -83,6 +93,28 @@ export class ErrorBoundary extends Component<Props, State> {
               </div>
             )}
 
+            {this.state.errorInfo?.componentStack && (
+              <details style={{ fontSize: '0.857rem' }}>
+                <summary style={{ cursor: 'pointer', color: 'var(--text-secondary)' }}>
+                  Component stack
+                </summary>
+                <pre
+                  style={{
+                    margin: '8px 0 0',
+                    maxHeight: '220px',
+                    overflow: 'auto',
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: '0.786rem',
+                    color: 'var(--text-secondary)',
+                  }}
+                >
+                  {this.state.errorInfo.componentStack.trim()}
+                </pre>
+              </details>
+            )}
+
             <Card.Footer>
               <Button
                 size="sm"
@@ -106,6 +138,6 @@ export class ErrorBoundary extends Component<Props, State> {
       );
     }
 
-    return this.props.children;
+    return <Fragment key={this.state.resetKey}>{this.props.children}</Fragment>;
   }
 }

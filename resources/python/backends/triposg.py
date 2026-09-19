@@ -48,6 +48,51 @@ def octree_depth_for(resolution: int) -> int:
     return max(MIN_DEPTH, min(MAX_DEPTH, depth))
 
 
+def mesh_from_output(output: Any):
+    """Pull the first trimesh out of a `TripoSGPipelineOutput`.
+
+    The pipeline fills both of its fields: `samples` is the raw list of
+    `(vertices, faces)` arrays the geometry extractor returned, and `meshes` is
+    that same list already wrapped as `trimesh.Trimesh`
+    (`return TripoSGPipelineOutput(samples=output, meshes=meshes)`). Upstream's
+    own `scripts/inference_triposg.py` takes `.samples[0]` and builds the
+    trimesh by hand; `meshes` is the shortcut and has been on the dataclass
+    since the initial release, so it is preferred here and `samples` is kept
+    only as a fallback should a future revision of the clone drop it.
+
+    Returns None when the pipeline ran but produced no geometry; raises when
+    neither field is present, which means the clone is a version this backend
+    does not understand.
+    """
+    import trimesh
+
+    meshes = getattr(output, "meshes", None)
+    if meshes:
+        return meshes[0]
+    samples = getattr(output, "samples", None)
+    if samples is not None and len(samples):
+        sample = samples[0]
+        if hasattr(sample, "faces"):  # already a trimesh
+            return sample
+        try:
+            vertices, faces = sample[0], sample[1]
+            return trimesh.Trimesh(np.asarray(vertices).astype(np.float32),
+                                   np.ascontiguousarray(faces))
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeError(
+                "TripoSG's pipeline returned a 'samples' entry this backend cannot read "
+                f"({type(sample).__name__}: {exc}). The cloned TripoSG repo is probably a "
+                "different version than this backend expects - re-clone it from the "
+                "Models view.") from exc
+    if meshes is None and samples is None:
+        raise RuntimeError(
+            f"TripoSG's pipeline returned a {type(output).__name__} with neither a "
+            "'meshes' nor a 'samples' field. The cloned TripoSG repo is probably a "
+            "different version than this backend expects - re-clone it from the "
+            "Models view.")
+    return None
+
+
 def frame_on_white(image, padding_ratio: float = 0.1):
     """Crop to the alpha bounds, composite over white, pad by `padding_ratio`."""
     from PIL import Image
@@ -98,7 +143,7 @@ class Backend(BaseBackend):
                 f"model_index.json is missing from {self.model_dir}; "
                 "re-download the model from the Models view")
 
-        self.log("info", f"loading TripoSG from {self.model_dir}")
+        self.log("debug", f"TripoSG weights: {self.model_dir}")
         pipeline = TripoSGPipeline.from_pretrained(self.model_dir)
 
         dtype = self.dtype or torch.float16
@@ -157,10 +202,10 @@ class Backend(BaseBackend):
         check_cancel(cancel)
 
         self.progress(80.0, "decode", "Building mesh")
-        meshes = getattr(output, "meshes", None) or []
-        mesh = meshes[0] if meshes else None
+        mesh = mesh_from_output(output)
         if mesh is None or len(mesh.faces) == 0:
             raise RuntimeError(
-                "TripoSG produced an empty mesh - try a different seed or more steps")
+                "TripoSG's mesh extractor found no surface in the decoded field - "
+                "try a different seed, more steps, or a higher resolution")
         self.progress(88.0, "decode", f"{len(mesh.faces)} faces")
         return mesh

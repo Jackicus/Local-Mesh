@@ -1,6 +1,5 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { ChildProcess } from 'node:child_process';
 import { BrowserWindow } from 'electron';
 import { IPC_CHANNELS, MODELS, MODEL_BY_ID } from '../core/types';
 import type {
@@ -10,6 +9,9 @@ import type {
   ModelInstallState,
 } from '../core/types';
 import {
+  DEPS_MARKER,
+  beginDepsInstall,
+  endDepsInstall,
   envPython,
   isEnvUsable,
   readManifest,
@@ -25,9 +27,11 @@ import {
   readCompleteManifest,
 } from './hfDownload';
 import type { SnapshotRepo } from './hfDownload';
-import { log } from './logger';
+import { formatBytes, plural, since } from './format';
+import { log, reported } from './logger';
 import { getConstraintsPath, getPaths, getReposDir, getTorchHubDir } from './paths';
 import { CancelledError, errorMessage, isCancelled, runCapture, spawnLines } from './proc';
+import type { LineProcess } from './proc';
 import { getState, isBusy, isModelLoaded } from './queueState';
 
 /**
@@ -38,8 +42,9 @@ import { getState, isBusy, isModelLoaded } from './queueState';
  * run concurrently. The renderer follows along over MODELS_DOWNLOAD_PROGRESS.
  */
 
-/** Contains the bundled scripts version the deps were installed for. */
-const DEPS_MARKER = '.deps-installed';
+// DEPS_MARKER (the file naming the bundled scripts version the deps were
+// installed for) is defined in envManager, which also clears the markers when
+// the env is removed.
 const SIZE_TTL_MS = 30_000;
 
 const dlog = log.for('download');
@@ -51,7 +56,7 @@ interface ModelRun {
   /** Weights: aborts the fetch. */
   controller: AbortController | null;
   /** Deps: the git / uv child currently running. */
-  child: ChildProcess | null;
+  proc: LineProcess | null;
   cancelled: boolean;
 }
 
@@ -105,9 +110,15 @@ function invalidateSize(modelId: string): void {
   sizeCache.delete(modelId);
 }
 
+/**
+ * Anything that could be part of a snapshot. The deps marker is not: it is
+ * written into the same directory by the other install step, and counting it
+ * would show a model whose dependencies are installed but whose weights were
+ * never fetched as a *partial* download, offering "Resume" over "Download".
+ */
 function hasAnyFile(dir: string): boolean {
   try {
-    return fs.readdirSync(dir).length > 0;
+    return fs.readdirSync(dir).some((name) => name !== DEPS_MARKER);
   } catch {
     return false;
   }
@@ -130,7 +141,11 @@ function snapshotRepos(model: ModelDefinition): SnapshotRepo[] {
   ];
 }
 
-function installState(model: ModelDefinition, version: string): ModelInstallState {
+/**
+ * `envReady` is threaded in rather than probed per model so a `listModels`
+ * sweep hits the filesystem once.
+ */
+function installState(model: ModelDefinition, version: string, envReady: boolean): ModelInstallState {
   const dir = path.join(getPaths().models, model.id);
   // The mock backend is procedural: nothing to fetch, nothing to install.
   if (model.id === 'mock') {
@@ -147,7 +162,13 @@ function installState(model: ModelDefinition, version: string): ModelInstallStat
   } catch {
     depsVersion = null;
   }
-  const deps = depsVersion === version ? 'installed' : 'missing';
+  // The packages the marker vouches for live in the venv, not next to the
+  // weights. `removeEnv` clears the markers, but the env can also vanish behind
+  // the app's back (`rm -rf ~/.local-mesh/env`, a failed setup, another
+  // machine's synced models dir), and a marker left claiming "installed" then
+  // shows "Extra packages: Installed" for packages that do not exist and turns
+  // into an import error at generate time. No env, no installed deps.
+  const deps = envReady && depsVersion === version ? 'installed' : 'missing';
   return {
     id: model.id,
     weights,
@@ -160,11 +181,12 @@ function installState(model: ModelDefinition, version: string): ModelInstallStat
 
 export function listModels(): ModelInstallState[] {
   const version = scriptsVersion();
-  return MODELS.map((model) => installState(model, version));
+  const envReady = isEnvUsable();
+  return MODELS.map((model) => installState(model, version, envReady));
 }
 
 export function getModelInstallState(modelId: string): ModelInstallState {
-  return installState(requireModel(modelId), scriptsVersion());
+  return installState(requireModel(modelId), scriptsVersion(), isEnvUsable());
 }
 
 export function isModelReady(modelId: string): boolean {
@@ -204,7 +226,7 @@ function beginRun(model: ModelDefinition, kind: RunKind): ModelRun {
   const run: ModelRun = {
     kind,
     controller: kind === 'weights' ? new AbortController() : null,
-    child: null,
+    proc: null,
     cancelled: false,
   };
   runs.set(model.id, run);
@@ -222,13 +244,13 @@ export async function downloadModel(modelId: string): Promise<void> {
   const run = beginRun(model, 'weights');
   const dest = path.join(getPaths().models, modelId);
   const repos = snapshotRepos(model);
+  const startedAt = Date.now();
   try {
     progress(modelId, 'weights', 'starting', `Contacting ${model.hfRepo || 'Hugging Face'}`);
-    dlog.info(
-      `${modelId}: downloading ${repos.map((r) => r.repo).join(', ') || '(no repo)'} into ${dest}`
-    );
+    dlog.info(`${modelId}: weights download started from ${repos.map((r) => r.repo).join(', ') || '(no repo)'}`);
+    dlog.debug(`${modelId}: destination ${dest}`);
     for (const extra of model.extraRepos ?? []) {
-      dlog.info(`${modelId}: extra repo ${extra.repo} → ${extra.dir}${extra.note ? ` (${extra.note})` : ''}`);
+      dlog.info(`${modelId}: also fetching ${extra.repo} → ${extra.dir}/${extra.note ? ` (${extra.note})` : ''}`);
     }
 
     if (repos.length === 0) {
@@ -250,23 +272,27 @@ export async function downloadModel(modelId: string): Promise<void> {
             pct: totalBytes > 0 ? Math.min(100, Math.round((downloadedBytes / totalBytes) * 100)) : 0,
           });
         },
-        onLog: (message) => dlog.info(`${modelId}: ${message}`),
+        onLog: (message, level = 'debug') => dlog[level](`${modelId}: ${message}`),
       });
-      dlog.info(`${modelId}: weights complete — ${result.files.length} files, ${result.totalBytes} bytes`);
+      dlog.info(
+        `${modelId}: weights complete in ${since(startedAt)} — ${plural(result.files.length, 'file')}, ` +
+          `${formatBytes(result.totalBytes)} on disk (${formatBytes(result.downloadedBytes)} over the network)`
+      );
     }
     invalidateSize(modelId);
     progress(modelId, 'weights', 'done', `${model.name} weights downloaded`, { pct: 100 });
   } catch (err) {
     invalidateSize(modelId);
     if (isAborted(err) || isCancelled(err) || run.cancelled) {
-      dlog.warn(`${modelId}: download cancelled (partial files kept, it will resume)`);
+      // Asked for by the user, and nothing is lost: the .part files resume.
+      dlog.info(`${modelId}: weights download cancelled after ${since(startedAt)}; partial files kept for resume`);
       progress(modelId, 'weights', 'cancelled', 'Cancelled');
       return;
     }
     const message = errorMessage(err);
-    dlog.error(`${modelId}: download failed: ${message}`);
+    dlog.error(`${modelId}: weights download failed after ${since(startedAt)}: ${message}`);
     progress(modelId, 'weights', 'failed', message, { error: message });
-    throw new Error(message);
+    throw reported(new Error(message));
   } finally {
     runs.delete(modelId);
   }
@@ -285,7 +311,11 @@ async function runDepsStep(
   env?: Record<string, string>
 ): Promise<void> {
   if (run.cancelled) throw new CancelledError();
-  dlog.info(`${model.id}: ${label}: ${cmd} ${args.join(' ')}`);
+  dlog.info(`${model.id}: ${label}…`);
+  // Kept out of the timeline but in the file: this is what makes a failed
+  // install reproducible from a bug report.
+  dlog.debug(`${model.id}: $ ${cmd} ${args.join(' ')}`);
+  const startedAt = Date.now();
   progress(model.id, 'deps', 'installing-deps', label, { pct });
   const recent: string[] = [];
   let lines = 0;
@@ -301,22 +331,23 @@ async function runDepsStep(
     });
   };
   const proc = spawnLines(cmd, args, { onStdout: onLine, onStderr: onLine, ...(env ? { env } : {}) });
-  run.child = proc.child;
+  run.proc = proc;
   let code: number | null;
   try {
     ({ code } = await proc.exited);
   } catch (err) {
-    run.child = null;
+    run.proc = null;
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
       throw new Error(`${cmd} was not found on PATH. Install it and restart Local Mesh.`);
     }
     throw err;
   }
-  run.child = null;
+  run.proc = null;
   if (run.cancelled) throw new CancelledError();
   if (code !== 0) {
     throw new Error(`${label} failed (exit ${code}).${recent.length ? `\n${recent.join('\n')}` : ''}`);
   }
+  dlog.info(`${model.id}: ${label} finished in ${since(startedAt)}`);
 }
 
 async function requireGit(): Promise<void> {
@@ -357,7 +388,7 @@ async function writeTorchConstraints(modelId: string): Promise<string> {
       `# dependencies cannot replace it. Regenerated on every dependency install.\n` +
       `${specifiers.join('\n')}\n`
   );
-  dlog.info(`${modelId}: constraining to ${specifiers.join(', ')} (${file})`);
+  dlog.debug(`${modelId}: pinning ${specifiers.join(', ')} for this install (${path.basename(file)})`);
   return file;
 }
 
@@ -374,16 +405,21 @@ export async function installModelDeps(modelId: string): Promise<void> {
   }
 
   const run = beginRun(model, 'deps');
+  // Tells envManager that the venv is being written to, so "Remove environment"
+  // is refused instead of deleting it out from under this install.
+  beginDepsInstall(model.id, model.name);
   const version = scriptsVersion();
   const manifest = readManifest();
   const entry = manifest.models[modelId];
   const dest = path.join(getPaths().models, modelId);
+  const startedAt = Date.now();
   try {
     fs.mkdirSync(dest, { recursive: true });
     progress(modelId, 'deps', 'installing-deps', `Preparing ${model.name} dependencies`, { pct: 2 });
+    dlog.info(`${modelId}: dependency install started (scripts ${version})`);
 
     if (!entry) {
-      dlog.warn(`${modelId}: not in the manifest; nothing to install`);
+      dlog.warn(`${modelId}: no manifest entry, so nothing was installed; the model may fail to load`);
     } else {
       const scripts = getPaths().scripts;
       const repos = getReposDir();
@@ -393,7 +429,7 @@ export async function installModelDeps(modelId: string): Promise<void> {
       for (const repo of entry.repos) {
         const target = path.join(repos, repo.dir);
         if (fs.existsSync(target)) {
-          dlog.info(`${modelId}: repo ${repo.dir} already cloned`);
+          dlog.debug(`${modelId}: ${repo.dir} is already cloned`);
           continue;
         }
         await runDepsStep(model, run, `Cloning ${repo.dir}`, 5, 'git', [
@@ -443,20 +479,24 @@ export async function installModelDeps(modelId: string): Promise<void> {
     if (run.cancelled) throw new CancelledError();
     fs.writeFileSync(path.join(dest, DEPS_MARKER), `${version}\n`);
     invalidateSize(modelId);
-    dlog.info(`${modelId}: dependencies installed for scripts ${version}`);
+    dlog.info(`${modelId}: dependencies installed in ${since(startedAt)} (scripts ${version})`);
     progress(modelId, 'deps', 'done', `${model.name} dependencies installed`, { pct: 100 });
   } catch (err) {
     invalidateSize(modelId);
     if (isCancelled(err) || run.cancelled) {
-      dlog.warn(`${modelId}: dependency install cancelled`);
+      // A half-installed venv is why this is worth a line, but the user asked.
+      dlog.info(
+        `${modelId}: dependency install cancelled after ${since(startedAt)}; run it again before using the model`
+      );
       progress(modelId, 'deps', 'cancelled', 'Cancelled');
       return;
     }
     const message = errorMessage(err);
-    dlog.error(`${modelId}: dependency install failed: ${message}`);
+    dlog.error(`${modelId}: dependency install failed after ${since(startedAt)}: ${message}`);
     progress(modelId, 'deps', 'failed', message, { error: message });
-    throw new Error(message);
+    throw reported(new Error(message));
   } finally {
+    endDepsInstall(model.id);
     runs.delete(modelId);
   }
 }
@@ -469,8 +509,10 @@ export function cancelModelDownload(modelId: string): void {
   if (!run) return;
   run.cancelled = true;
   run.controller?.abort();
-  run.child?.kill('SIGTERM');
-  dlog.info(`${modelId}: cancel requested (${run.kind})`);
+  // The whole group: `uv`/`git` do the real work in children of their own, and
+  // a surviving pip resolver keeps writing into the venv after "cancelled".
+  run.proc?.kill('SIGTERM');
+  dlog.info(`${modelId}: cancelling the ${run.kind === 'weights' ? 'weights download' : 'dependency install'}`);
 }
 
 /** App quit: stop everything in flight. Partial weights resume next time. */
@@ -493,7 +535,8 @@ export function deleteModel(modelId: string): void {
   if (isBusy() && queuedForModel(modelId)) {
     throw new Error(`${model.name} still has jobs in the queue.`);
   }
+  const freed = installState(model, scriptsVersion(), isEnvUsable()).sizeBytes;
   fs.rmSync(path.join(getPaths().models, modelId), { recursive: true, force: true });
   invalidateSize(modelId);
-  dlog.info(`${modelId}: weights and dependency marker removed`);
+  dlog.info(`${modelId}: weights and dependency marker removed, ${formatBytes(freed)} freed`);
 }

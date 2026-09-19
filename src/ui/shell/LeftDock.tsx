@@ -11,6 +11,7 @@ import {
 } from '../assets/icons';
 import { useDockStore, DOCK_MIN_WIDTH, DOCK_MAX_WIDTH } from '../stores/dockStore';
 import { useLogStore } from '../stores/logStore';
+import { EngineItem } from './EngineItem';
 
 interface NavItem {
   id: string;
@@ -56,19 +57,37 @@ export const LeftDock: React.FC = () => {
 
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
+    // Releasing the button outside the window never delivers mouseup, which
+    // would otherwise leave the dock stuck in a drag it can't get out of
+    window.addEventListener('blur', handleMouseUp);
 
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('blur', handleMouseUp);
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
     };
   }, [isResizing, store]);
 
   const handleResizerMouseDown = (e: React.MouseEvent) => {
-    if (!dockState.isOpen) return;
+    if (!dockState.isOpen || e.button !== 0) return;
     e.preventDefault();
     setIsResizing(true);
+  };
+
+  // The handle is a real separator widget: arrows nudge, Home/End jump to the
+  // bounds, so the dock width isn't a mouse-only setting
+  const handleResizerKeyDown = (e: React.KeyboardEvent) => {
+    const step = e.shiftKey ? 32 : 8;
+    let next: number | null = null;
+    if (e.key === 'ArrowLeft') next = dockState.width - step;
+    else if (e.key === 'ArrowRight') next = dockState.width + step;
+    else if (e.key === 'Home') next = DOCK_MIN_WIDTH;
+    else if (e.key === 'End') next = DOCK_MAX_WIDTH;
+    if (next === null) return;
+    e.preventDefault();
+    store.setWidth(Math.max(DOCK_MIN_WIDTH, Math.min(DOCK_MAX_WIDTH, next)));
   };
 
   const renderNavItem = (item: NavItem) => {
@@ -82,6 +101,7 @@ export const LeftDock: React.FC = () => {
         type="button"
         className={`dock-item ${isActive ? 'active' : ''}`}
         aria-expanded={isLogs ? dockState.bottom.isOpen : undefined}
+        aria-current={!isLogs && isActive ? 'page' : undefined}
         onClick={() => (isLogs ? store.toggleBottom() : store.setActiveItem(item.id))}
       >
         <span className="dock-item-icon">
@@ -89,7 +109,11 @@ export const LeftDock: React.FC = () => {
         </span>
         <span className="dock-item-label">{item.label}</span>
         {isLogs && logs.unseenErrors > 0 && (
-          <span className="dock-item-badge" title={`${logs.unseenErrors} unseen errors`}>
+          <span
+            className="dock-item-badge"
+            title={`${logs.unseenErrors} unseen errors`}
+            aria-label={`${logs.unseenErrors} unseen errors`}
+          >
             {logs.unseenErrors > 99 ? '99+' : logs.unseenErrors}
           </span>
         )}
@@ -113,6 +137,7 @@ export const LeftDock: React.FC = () => {
         </nav>
 
         <div className="left-dock-footer">
+          <EngineItem />
           {FOOTER_NAV_ITEMS.map(renderNavItem)}
         </div>
       </div>
@@ -122,6 +147,14 @@ export const LeftDock: React.FC = () => {
         <div
           className={`dock-resizer ${isResizing ? 'resizing' : ''}`}
           onMouseDown={handleResizerMouseDown}
+          onKeyDown={handleResizerKeyDown}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize navigation dock"
+          aria-valuenow={dockState.width}
+          aria-valuemin={DOCK_MIN_WIDTH}
+          aria-valuemax={DOCK_MAX_WIDTH}
+          tabIndex={0}
           title="Drag to resize dock"
         />
       )}

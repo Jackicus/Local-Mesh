@@ -5,7 +5,17 @@
    every control floats above it on a frosted plate. Plates share one recipe
    (translucent --bg-surface, blur, hairline border) so the chrome reads as a
    single instrument laid over the model; the accent is spent only on live
-   things — progress, active toggles, the run button.
+   things — progress, active toggles, the run button, a handle under the
+   pointer.
+
+   Three stations, one per corner the model doesn't need:
+     top right     the navigator — where the camera is, and the way home
+     bottom left   the queue — one bar per job, the composer as the last bar
+     bottom right  three plates, each a button that opens one panel
+
+   Spacing runs off a local scale rather than loose numbers; there is no space
+   token in variables.css to inherit, so the view declares its own and every
+   rule below reads from it.
    ========================================================================== */
 
 @layer views {
@@ -17,9 +27,26 @@
     min-width: 0;
     margin: calc(-1 * (var(--topbar-height) + 20px)) -24px -24px;
     overflow: hidden;
+
+    --gen-s1: 4px;
+    --gen-s2: 6px;
+    --gen-s3: 8px;
+    --gen-s4: 12px;
+    --gen-s5: 16px;
+    --gen-inset: var(--gen-s4);
+
     --gen-plate-bg: color-mix(in oklab, var(--bg-surface) 92%, transparent);
-    --gen-inset: 12px;
-    --gen-dock-width: 340px;
+    --gen-plate-shadow: 0 8px 28px oklch(0% 0 0 / 0.22);
+    /* Set into a plate rather than onto it: a step down from the plate's own
+       ground in both themes. */
+    --gen-inset-bg: color-mix(in oklab, var(--bg-app) 60%, transparent);
+
+    --gen-queue-width: 460px;
+    --gen-panel-w: 236px;
+    /* The dial's plate, and the circle the axis handles are laid out on.
+       --gen-gizmo-core must match RADIUS * 2 in CameraGizmo.tsx. */
+    --gen-gizmo-size: 84px;
+    --gen-gizmo-core: 54px;
   }
 
   .gen-canvas {
@@ -37,31 +64,31 @@
   /* --------------------------------------------------------------------------
      Shared plate + label voice
      -------------------------------------------------------------------------- */
-  .gen-dock,
-  .gen-status,
-  .gen-viewer-tools,
-  .gen-mesh-tools,
-  .gen-popover,
+  .gen-queue,
+  .gen-tool-btn,
+  .gen-panel,
   .gen-plate,
   .gen-scene-note,
-  .gen-dock-open {
+  .gen-gizmo,
+  .gen-home {
     background-color: var(--gen-plate-bg);
     backdrop-filter: blur(12px);
     border: 1px solid var(--border-subtle);
-    box-shadow: 0 8px 28px oklch(0% 0 0 / 0.22);
+    box-shadow: var(--gen-plate-shadow);
   }
 
-  .gen-status-label,
-  .gen-mesh-btn,
   .gen-popover-title,
   .gen-popover-meta,
-  .gen-section-title,
-  .gen-dock-title,
-  .gen-kv-key,
+  .gen-panel-title,
+  .gen-queue-title,
+  .gen-queue-count,
+  .gen-queue-clear,
+  .gen-qbar-detail,
+  .gen-qbar-fact,
   .gen-plate-stats,
   .gen-drop-hint,
-  .gen-job-sub,
   .gen-output-meta,
+  .gen-switch-hint,
   .gen-note {
     font-family: var(--font-mono);
     font-size: 0.688rem;
@@ -69,6 +96,18 @@
     text-transform: uppercase;
     letter-spacing: 0.09em;
     color: var(--text-muted);
+  }
+
+  /* Anything that must be announced but not drawn. */
+  .gen-live {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 
   /* --------------------------------------------------------------------------
@@ -82,10 +121,10 @@
     display: flex;
     gap: 10px;
     align-items: center;
-    padding: 7px 12px;
+    padding: 7px var(--gen-s4);
     border-radius: var(--radius-md);
     pointer-events: none;
-    max-width: 320px;
+    max-width: min(320px, calc(100% - var(--gen-gizmo-size) - var(--gen-inset) * 4));
   }
 
   .gen-plate-name {
@@ -98,14 +137,8 @@
   }
 
   .gen-scene-note {
-    top: calc(var(--topbar-height) + var(--gen-inset));
     font-size: 0.857rem;
     color: var(--text-secondary);
-  }
-
-  .gen-view.is-docked .gen-plate,
-  .gen-view.is-docked .gen-scene-note {
-    max-width: calc(100% - var(--gen-dock-width) - var(--gen-inset) * 3);
   }
 
   .gen-plate + .gen-scene-note {
@@ -130,16 +163,11 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 6px;
+    gap: var(--gen-s2);
     color: var(--text-muted);
     pointer-events: none;
     text-align: center;
     padding: 0 24px;
-  }
-
-  /* Centre the hint in the visible part of the scene, not under the dock */
-  .gen-view.is-docked .gen-empty {
-    right: calc(var(--gen-dock-width) + var(--gen-inset) * 2);
   }
 
   .gen-empty-title {
@@ -149,7 +177,7 @@
     text-transform: uppercase;
     letter-spacing: 0.09em;
     color: var(--text-secondary);
-    margin-top: 6px;
+    margin-top: var(--gen-s2);
   }
 
   .gen-empty-hint {
@@ -158,148 +186,857 @@
   }
 
   /* --------------------------------------------------------------------------
-     Bottom band: worker readout on the left, viewer tools on the right,
-     shortened while the dock is out so the two can never collide
+     Navigator: the orientation dial and the way home
+     -------------------------------------------------------------------------- */
+  .gen-navigator {
+    position: absolute;
+    top: calc(var(--topbar-height) + var(--gen-inset));
+    right: var(--gen-inset);
+    /* Below the HUD band: a tall tool panel opening upward must not be
+       covered by the dial. */
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--gen-s3);
+  }
+
+  .gen-gizmo {
+    position: relative;
+    width: var(--gen-gizmo-size);
+    height: var(--gen-gizmo-size);
+    border-radius: 50%;
+  }
+
+  /* Three spokes from the hub to the positive handles; the script rewrites
+     their far end every frame, so the box is exactly the layout circle. */
+  .gen-gizmo-spokes {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: var(--gen-gizmo-core);
+    height: var(--gen-gizmo-core);
+    transform: translate(-50%, -50%);
+    overflow: visible;
+    pointer-events: none;
+  }
+
+  .gen-gizmo-spokes line {
+    stroke: var(--border-strong);
+    stroke-width: 1.5;
+    stroke-linecap: round;
+  }
+
+  /* transform and opacity are written per frame from the camera pose, so
+     nothing here may transition them — only the colours move on hover. */
+  .gen-gizmo-axis {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    font-family: var(--font-mono);
+    font-size: 0.625rem;
+    font-weight: 700;
+    line-height: 1;
+    transition: background-color var(--transition-fast), border-color var(--transition-fast),
+      color var(--transition-fast);
+  }
+
+  .gen-gizmo-axis.is-positive {
+    width: 21px;
+    height: 21px;
+    background-color: var(--bg-surface-active);
+    border: 1px solid var(--border-strong);
+    color: var(--text-secondary);
+  }
+
+  .gen-gizmo-axis.is-negative {
+    width: 11px;
+    height: 11px;
+    border: 1.5px solid var(--border-strong);
+  }
+
+  .gen-gizmo-axis:hover:not(:disabled) {
+    background-color: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-text);
+  }
+
+  .gen-gizmo-axis:disabled {
+    cursor: not-allowed;
+    border-style: dashed;
+  }
+
+  .gen-home {
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-md);
+  }
+
+  /* --------------------------------------------------------------------------
+     Bottom band: the queue on the left, the tool plates on the right
      -------------------------------------------------------------------------- */
   .gen-hud {
     position: absolute;
     left: var(--gen-inset);
     right: var(--gen-inset);
+    /* Bounded at the top as well as the bottom: a long queue with an open
+       drawer must scroll inside the band, not climb over the titlebar. */
+    top: calc(var(--topbar-height) + var(--gen-inset));
     bottom: calc(var(--gen-inset) + var(--bottomdock-height, 0px));
-    z-index: 1;
+    z-index: 2;
     display: flex;
     align-items: flex-end;
     justify-content: space-between;
-    gap: 12px;
+    gap: var(--gen-s4);
     pointer-events: none;
-  }
-
-  .gen-view.is-docked .gen-hud {
-    right: calc(var(--gen-dock-width) + var(--gen-inset) * 2);
   }
 
   .gen-hud > * {
     pointer-events: auto;
   }
 
-  /* Camera tools and mesh tools travel together on the right of the band; the
-     wrapper only exists so the two plates keep a gap and stay off the readout. */
-  .gen-hud-tools {
+  /* --------------------------------------------------------------------------
+     The queue: one plate, one bar per job, the composer as the last bar
+     -------------------------------------------------------------------------- */
+  .gen-queue {
+    position: relative;
+    flex: 1 1 var(--gen-queue-width);
+    max-width: min(var(--gen-queue-width), 60%);
+    min-width: 0;
+    max-height: 100%;
+    overflow-y: auto;
+    overscroll-behavior: contain;
     display: flex;
-    align-items: flex-end;
-    justify-content: flex-end;
-    flex-wrap: wrap;
-    gap: 12px;
+    flex-direction: column;
+    padding: var(--gen-s2);
+    gap: var(--gen-s1);
+    border-radius: var(--radius-lg);
+  }
+
+  .gen-queue-head {
+    display: flex;
+    align-items: center;
+    gap: var(--gen-s3);
+    padding: var(--gen-s1) var(--gen-s2) var(--gen-s2);
+  }
+
+  .gen-queue-title {
+    color: var(--text-secondary);
+  }
+
+  .gen-queue-count {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .gen-queue-clear {
     margin-left: auto;
-    min-width: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gen-s1);
+    padding: 2px var(--gen-s2);
+    border-radius: var(--radius-sm);
+    transition: background-color var(--transition-fast), color var(--transition-fast);
   }
 
-  .gen-hud .gen-hud-tools {
-    pointer-events: none;
+  .gen-queue-clear:hover {
+    background-color: var(--bg-surface-hover);
+    color: var(--text-secondary);
   }
 
-  .gen-hud-tools > * {
-    pointer-events: auto;
-  }
-
-  .gen-status {
+  .gen-queue-list {
+    list-style: none;
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    flex: 0 1 320px;
-    min-width: 0;
-    padding: 10px 12px;
-    border-radius: var(--radius-md);
+    gap: var(--gen-s1);
+    max-height: min(38vh, 340px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
 
-  .gen-status-line {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-width: 0;
-  }
-
-  .gen-status-sep {
-    flex: 1;
-    height: 1px;
-    background-color: var(--border-subtle);
-  }
-
-  .gen-status-model {
-    font-size: 0.786rem;
-    color: var(--text-secondary);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .gen-status-vram,
-  .gen-status-job {
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
-  }
-
-  .gen-status-vram {
-    flex-direction: row;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .gen-status-vram .gen-bar {
-    flex: 1;
-  }
-
-  .gen-status-value {
-    font-family: var(--font-mono);
-    font-size: 0.688rem;
-    color: var(--text-secondary);
-    white-space: nowrap;
-  }
-
-  .gen-status-message {
-    font-size: 0.786rem;
-    color: var(--text-muted);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .gen-dot {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    flex-shrink: 0;
-    background-color: var(--text-muted);
-  }
-
-  .gen-dot-accent {
-    background-color: var(--accent);
-    box-shadow: 0 0 0 3px var(--accent-subtle);
-    animation: gen-pulse 1.6s ease-in-out infinite;
-  }
-
-  .gen-dot-success {
-    background-color: var(--success);
-  }
-
-  .gen-dot-warning {
-    background-color: var(--warning);
-    animation: gen-pulse 1.6s ease-in-out infinite;
-  }
-
-  .gen-dot-danger {
-    background-color: var(--danger);
-  }
-
-  @keyframes gen-pulse {
-    50% {
-      opacity: 0.35;
-    }
+  /* The whole list is the drop target while a bar is in hand. */
+  .gen-queue-list.is-reordering {
+    cursor: grabbing;
+    user-select: none;
   }
 
   /* --------------------------------------------------------------------------
-     Progress bars
+     One bar
+     -------------------------------------------------------------------------- */
+  .gen-qbar,
+  .gen-composer {
+    position: relative;
+    border-radius: var(--radius-md);
+    background-color: var(--gen-inset-bg);
+    border: 1px solid var(--border-subtle);
+  }
+
+  .gen-composer {
+    /* The line you act on: a touch brighter than the history above it. */
+    background-color: color-mix(in oklab, var(--bg-app) 32%, transparent);
+    border-color: var(--border-strong);
+  }
+
+  .gen-qbar-row {
+    position: relative;
+    display: grid;
+    grid-template-columns: 16px auto minmax(0, 1fr) auto auto auto auto;
+    align-items: center;
+    gap: var(--gen-s3);
+    min-height: 44px;
+    padding: var(--gen-s2) var(--gen-s3) var(--gen-s2) var(--gen-s4);
+    border-radius: inherit;
+  }
+
+  /* The status rail: the one place a bar's state is colour rather than words. */
+  .gen-qbar-row::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: var(--gen-s2);
+    bottom: var(--gen-s2);
+    width: 2px;
+    border-radius: 0 1px 1px 0;
+    background-color: var(--border-strong);
+  }
+
+  .gen-qbar-loading .gen-qbar-row::before,
+  .gen-qbar-running .gen-qbar-row::before {
+    background-color: var(--accent);
+  }
+
+  .gen-qbar-done .gen-qbar-row::before {
+    background-color: var(--success);
+  }
+
+  .gen-qbar-failed .gen-qbar-row::before {
+    background-color: var(--danger);
+  }
+
+  .gen-qbar-cancelled .gen-qbar-row::before {
+    background-color: var(--text-muted);
+  }
+
+  .gen-composer .gen-qbar-row::before {
+    background-color: var(--accent);
+    opacity: 0.55;
+  }
+
+  /* The progress fill is the bar's own ground: a wash to the current percent
+     with the accent drawn along its bottom edge. */
+  .gen-qbar-fill {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    /* Rounded at both ends rather than clipped by the row: the row can't hide
+       its overflow, because the panel below it has to be able to open. */
+    border-radius: inherit;
+    background-color: var(--accent-subtle);
+    box-shadow: inset 0 -2px 0 var(--accent);
+    transition: width var(--transition-base);
+    pointer-events: none;
+  }
+
+  .gen-qbar-grip,
+  .gen-qbar-glyph {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    color: var(--text-muted);
+  }
+
+  .gen-qbar-grip {
+    height: 24px;
+    border-radius: var(--radius-sm);
+    cursor: grab;
+    touch-action: none;
+    transition: color var(--transition-fast), background-color var(--transition-fast);
+  }
+
+  .gen-qbar-grip:hover {
+    color: var(--text-primary);
+    background-color: var(--bg-surface-hover);
+  }
+
+  .gen-qbar-done .gen-qbar-glyph {
+    color: var(--success);
+  }
+
+  .gen-qbar-failed .gen-qbar-glyph {
+    color: var(--danger);
+  }
+
+  .gen-qbar-body {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+
+  .gen-qbar-name {
+    font-size: 0.857rem;
+    font-weight: 500;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .gen-qbar-detail {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .gen-qbar-detail.is-error,
+  .gen-qbar-detail .is-error {
+    color: var(--danger);
+  }
+
+  .gen-qbar-clock {
+    display: flex;
+    align-items: baseline;
+    gap: var(--gen-s2);
+    font-family: var(--font-mono);
+    font-size: 0.688rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-secondary);
+    white-space: nowrap;
+  }
+
+  /* The composer holds the column but has nothing to put in it; dropping the
+     cell spares the layout a gap it would otherwise keep on both sides. */
+  .gen-qbar-clock:empty {
+    display: none;
+  }
+
+  .gen-qbar-pct {
+    color: var(--text-muted);
+  }
+
+  .gen-qbar-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    transition: background-color var(--transition-fast), color var(--transition-fast),
+      transform var(--transition-fast);
+  }
+
+  .gen-qbar-btn:hover {
+    background-color: var(--bg-surface-hover);
+    color: var(--text-primary);
+  }
+
+  .gen-qbar-btn:active {
+    transform: scale(0.9);
+  }
+
+  .gen-qbar-btn.is-active {
+    color: var(--text-primary);
+    background-color: var(--bg-surface-hover);
+  }
+
+  .gen-qbar-stop:hover {
+    background-color: var(--danger-subtle);
+    color: var(--danger);
+  }
+
+  .gen-chevron {
+    transition: transform var(--transition-fast);
+  }
+
+  .gen-chevron.is-open {
+    transform: rotate(180deg);
+  }
+
+  /* Dragging: the carried bar rises off the plate and nothing transitions,
+     since its transform is following the pointer. */
+  .gen-qbar {
+    transition: transform var(--transition-base);
+  }
+
+  .gen-qbar.is-dragging {
+    z-index: 3;
+    transition: none;
+    box-shadow: var(--gen-plate-shadow);
+    border-color: var(--accent);
+    background-color: var(--bg-surface);
+  }
+
+  .gen-qbar.is-dragging .gen-qbar-grip {
+    cursor: grabbing;
+    color: var(--accent);
+  }
+
+  /* --------------------------------------------------------------------------
+     The bar's panel: one drawer, two doors — the expand arrow opens the
+     detail, the tag opens the pipeline chooser.
+     -------------------------------------------------------------------------- */
+  /* An open drawer squares off the bar above it, so the two read as one card. */
+  .gen-qbar.is-expanded > .gen-qbar-row,
+  .gen-composer.is-expanded > .gen-qbar-row {
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
+  }
+
+  .gen-qbar-panel {
+    padding: var(--gen-s4);
+    border-top: 1px solid var(--border-subtle);
+    animation: gen-rise var(--transition-base) both;
+  }
+
+  .gen-qbar-detail-panel {
+    display: flex;
+    gap: var(--gen-s4);
+  }
+
+  .gen-pipepanel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gen-s3);
+  }
+
+  .gen-qbar-facts {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--gen-s2);
+  }
+
+  .gen-qbar-path {
+    font-family: var(--font-mono);
+    font-size: 0.688rem;
+    color: var(--text-secondary);
+    overflow-wrap: anywhere;
+    line-height: 1.45;
+  }
+
+  .gen-qbar-fault {
+    font-size: 0.786rem;
+    line-height: 1.45;
+    color: var(--danger);
+  }
+
+  .gen-composer-run.btn-sm {
+    min-width: auto;
+    padding: 5px 10px;
+  }
+
+  /* --------------------------------------------------------------------------
+     The pipeline tag
+     -------------------------------------------------------------------------- */
+  .gen-tag {
+    display: flex;
+    align-items: center;
+    gap: var(--gen-s1);
+    max-width: 130px;
+    height: 22px;
+    padding: 0 var(--gen-s2);
+    border: 1px solid var(--border-subtle);
+    border-radius: 999px;
+    background-color: color-mix(in oklab, var(--bg-surface) 55%, transparent);
+    font-family: var(--font-mono);
+    font-size: 0.688rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: var(--text-secondary);
+    transition: background-color var(--transition-fast), border-color var(--transition-fast),
+      color var(--transition-fast);
+  }
+
+  .gen-tag:hover,
+  .gen-tag.is-open {
+    border-color: var(--accent);
+    color: var(--accent);
+    background-color: var(--accent-subtle);
+  }
+
+  .gen-tag-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* --------------------------------------------------------------------------
+     Tool panels: the one kind of thing that does float over the viewport, and
+     only ever one at a time. Anchored to the right of its plate so it opens
+     inwards instead of running off the window.
+     -------------------------------------------------------------------------- */
+  .gen-panel {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + var(--gen-s3));
+    z-index: 4;
+    display: flex;
+    flex-direction: column;
+    gap: var(--gen-s3);
+    padding: var(--gen-s4);
+    border-radius: var(--radius-md);
+    width: var(--gen-panel-w);
+    max-width: calc(100vw - var(--gen-inset) * 4);
+    animation: gen-rise var(--transition-base) both;
+  }
+
+  /* Output names need the extra column; nothing else does. */
+  .gen-panel:has(> .gen-outputs) {
+    --gen-panel-w: 288px;
+  }
+
+  @keyframes gen-rise {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+  }
+
+  .gen-popover-title {
+    color: var(--text-secondary);
+  }
+
+  .gen-popover-value {
+    font-size: 0.857rem;
+    color: var(--text-primary);
+  }
+
+  .gen-popover-note,
+  .gen-popover-meta {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--gen-s3);
+    font-family: var(--font-mono);
+    font-size: 0.688rem;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+  }
+
+  .gen-popover-note {
+    display: block;
+    font-family: var(--font-sans);
+    font-size: 0.786rem;
+    line-height: 1.45;
+    text-wrap: pretty;
+  }
+
+  /* The sm segmented control hard-codes a 64px floor; three of them don't fit
+     a panel this narrow, and here the labels are short enough not to need it. */
+  .gen-qbar-panel .ui-segmented-item,
+  .gen-panel .ui-segmented-item {
+    min-width: 0;
+    padding: 5px 6px;
+    font-size: 0.786rem;
+  }
+
+  .gen-qbar-panel .ui-select-wrapper,
+  .gen-panel .ui-select-wrapper {
+    width: 100%;
+  }
+
+  .gen-panel .btn-sm,
+  .gen-qbar-panel .btn-sm {
+    min-width: auto;
+  }
+
+  .gen-elapsed {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  /* --------------------------------------------------------------------------
+     Tool plates: Camera, Edit, Outputs
+     -------------------------------------------------------------------------- */
+  .gen-plates {
+    flex: none;
+    display: flex;
+    align-items: flex-end;
+    justify-content: flex-end;
+    gap: var(--gen-s3);
+    min-width: 0;
+  }
+
+  .gen-toolplate {
+    position: relative;
+    display: flex;
+  }
+
+  .gen-tool-btn {
+    display: flex;
+    align-items: center;
+    gap: var(--gen-s2);
+    height: 34px;
+    padding: 0 var(--gen-s4);
+    border-radius: var(--radius-md);
+    font-family: var(--font-mono);
+    font-size: 0.688rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    color: var(--text-secondary);
+    transition: background-color var(--transition-fast), color var(--transition-fast),
+      transform var(--transition-fast);
+  }
+
+  .gen-tool-btn:hover {
+    color: var(--text-primary);
+    background-color: var(--bg-surface-hover);
+  }
+
+  .gen-tool-btn:active {
+    transform: scale(0.96);
+  }
+
+  .gen-tool-btn.is-active {
+    color: var(--accent);
+    border-color: var(--accent);
+    background-color: var(--accent-subtle);
+  }
+
+  .gen-panel-head {
+    display: flex;
+    align-items: center;
+    gap: var(--gen-s3);
+  }
+
+  .gen-panel-title {
+    color: var(--text-secondary);
+  }
+
+  .gen-panel-meta {
+    font-family: var(--font-mono);
+    font-size: 0.688rem;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .gen-panel-action {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    transition: background-color var(--transition-fast), color var(--transition-fast);
+  }
+
+  .gen-panel-head .gen-panel-action {
+    margin-left: auto;
+  }
+
+  .gen-panel-action:hover {
+    background-color: var(--bg-surface-hover);
+    color: var(--text-primary);
+  }
+
+  /* --------------------------------------------------------------------------
+     Camera panel
+     -------------------------------------------------------------------------- */
+  .gen-switches {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gen-s1);
+  }
+
+  .gen-switch {
+    display: flex;
+    align-items: center;
+    gap: var(--gen-s3);
+    padding: var(--gen-s2);
+    border-radius: var(--radius-sm);
+  }
+
+  .gen-switch:hover {
+    background-color: var(--bg-surface-hover);
+  }
+
+  .gen-switch-icon {
+    display: flex;
+    color: var(--text-muted);
+  }
+
+  .gen-switch-text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+
+  .gen-switch-label {
+    font-size: 0.857rem;
+    color: var(--text-primary);
+  }
+
+  /* --------------------------------------------------------------------------
+     Edit panel
+     -------------------------------------------------------------------------- */
+  .gen-edit {
+    display: contents;
+  }
+
+  .gen-edit-reason {
+    padding: var(--gen-s2) var(--gen-s3);
+    border-radius: var(--radius-sm);
+    background-color: var(--warning-subtle);
+    color: var(--warning);
+    font-size: 0.786rem;
+  }
+
+  .gen-edit-progress,
+  .gen-edit-progress-line {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gen-s1);
+  }
+
+  .gen-edit-progress-line {
+    flex-direction: row;
+    align-items: baseline;
+    justify-content: space-between;
+  }
+
+  .gen-edit-ops {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+
+  .gen-edit-item.is-open {
+    background-color: var(--gen-inset-bg);
+    border-radius: var(--radius-sm);
+  }
+
+  .gen-edit-op {
+    display: flex;
+    align-items: center;
+    gap: var(--gen-s3);
+    width: 100%;
+    padding: var(--gen-s2) var(--gen-s3);
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    font-size: 0.857rem;
+    text-align: left;
+    transition: background-color var(--transition-fast), color var(--transition-fast);
+  }
+
+  .gen-edit-op:hover:not(:disabled) {
+    background-color: var(--bg-surface-hover);
+    color: var(--text-primary);
+  }
+
+  .gen-edit-op:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .gen-edit-op-icon {
+    display: flex;
+    color: var(--text-muted);
+  }
+
+  .gen-edit-op-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .gen-edit-options {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gen-s3);
+    padding: var(--gen-s2) var(--gen-s3) var(--gen-s3);
+  }
+
+  .gen-edit-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--gen-s3);
+    padding-top: var(--gen-s3);
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  /* --------------------------------------------------------------------------
+     Outputs panel
+     -------------------------------------------------------------------------- */
+  .gen-outputs {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gen-s3);
+    min-width: 0;
+  }
+
+  .gen-output-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    max-height: min(34vh, 300px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .gen-output {
+    display: flex;
+    align-items: center;
+    gap: var(--gen-s2);
+    padding: 2px 0;
+  }
+
+  .gen-output:not(:last-child) {
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .gen-output-open {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding: var(--gen-s1) var(--gen-s2);
+    margin-left: calc(-1 * var(--gen-s2));
+    border-radius: var(--radius-sm);
+    text-align: left;
+    transition: background-color var(--transition-fast);
+  }
+
+  .gen-output-open:hover {
+    background-color: var(--bg-surface-hover);
+  }
+
+  .gen-output-name {
+    font-size: 0.857rem;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .gen-output.is-loaded .gen-output-name {
+    color: var(--accent);
+  }
+
+  .gen-blank {
+    font-size: 0.857rem;
+    line-height: 1.45;
+    color: var(--text-muted);
+    text-wrap: pretty;
+  }
+
+  /* --------------------------------------------------------------------------
+     Progress bars (VRAM readouts, mesh tool runs)
      -------------------------------------------------------------------------- */
   .gen-bar {
     height: 4px;
@@ -341,18 +1078,8 @@
   }
 
   /* --------------------------------------------------------------------------
-     Viewer toolbar (bottom right) + the icon button shared with the dock
+     Shared tool button (the home key, and anything else that is just an icon)
      -------------------------------------------------------------------------- */
-  .gen-viewer-tools {
-    flex: none;
-    margin-left: auto;
-    display: flex;
-    align-items: center;
-    gap: 2px;
-    padding: 4px;
-    border-radius: var(--radius-md);
-  }
-
   .gen-tool {
     display: flex;
     align-items: center;
@@ -374,255 +1101,31 @@
     transform: scale(0.92);
   }
 
-  .gen-tool.is-active {
-    background-color: var(--accent-subtle);
-    color: var(--accent);
-  }
-
   .gen-tool:disabled {
     opacity: 0.4;
     cursor: not-allowed;
-  }
-
-  .gen-tool-divider {
-    width: 1px;
-    height: 18px;
-    margin: 0 4px;
-    background-color: var(--border-subtle);
-  }
-
-  /* --------------------------------------------------------------------------
-     Mesh tools: same plate as the camera tools, but these change the model
-     rather than the view — labelled, and each opens its settings above itself.
-     -------------------------------------------------------------------------- */
-  .gen-mesh-tools {
-    flex: none;
-    display: flex;
-    align-items: center;
-    gap: 2px;
-    padding: 4px;
-    border-radius: var(--radius-md);
-  }
-
-  .gen-mesh-item {
-    position: relative;
-    display: flex;
-  }
-
-  .gen-mesh-btn {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    height: 30px;
-    padding: 0 10px;
-    border-radius: var(--radius-sm);
-    color: var(--text-secondary);
-    transition: background-color var(--transition-fast), color var(--transition-fast),
-      transform var(--transition-fast);
-  }
-
-  .gen-mesh-btn:hover:not(:disabled) {
-    background-color: var(--bg-surface-hover);
-    color: var(--text-primary);
-  }
-
-  .gen-mesh-btn:active:not(:disabled) {
-    transform: scale(0.94);
-  }
-
-  .gen-mesh-btn.is-active {
-    background-color: var(--accent-subtle);
-    color: var(--accent);
-  }
-
-  /* Let the pointer through to the Tooltip wrapper so a disabled button can
-     still say why it is disabled. */
-  .gen-mesh-btn:disabled {
-    opacity: 0.4;
-    pointer-events: none;
-  }
-
-  .gen-mesh-btn-icon {
-    padding: 0 8px;
-  }
-
-  .gen-popover {
-    position: absolute;
-    bottom: calc(100% + 8px);
-    left: 0;
-    z-index: 4;
-    width: 210px;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    padding: 10px;
-    border-radius: var(--radius-md);
-  }
-
-  .gen-popover-title {
-    color: var(--text-secondary);
-  }
-
-  .gen-popover-meta {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 8px;
-    letter-spacing: 0.04em;
-    text-transform: none;
-  }
-
-  /* The sm segmented control hard-codes a 64px floor; three of them don't fit
-     a popover this narrow, and here the labels are short enough not to need it. */
-  .gen-popover .ui-segmented-item {
-    min-width: 0;
-    padding: 5px 6px;
-    font-size: 0.786rem;
-  }
-
-  .gen-elapsed {
-    font-family: var(--font-mono);
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-  }
-
-  /* --------------------------------------------------------------------------
-     Right dock
-     -------------------------------------------------------------------------- */
-  .gen-dock {
-    position: absolute;
-    top: calc(var(--topbar-height) + var(--gen-inset));
-    right: var(--gen-inset);
-    bottom: calc(var(--gen-inset) + var(--bottomdock-height, 0px));
-    z-index: 2;
-    width: var(--gen-dock-width);
-    max-width: calc(100% - var(--gen-inset) * 2);
-    display: flex;
-    flex-direction: column;
-    border-radius: var(--radius-lg);
-    overflow: hidden;
-  }
-
-  /* The collapsed dock's handle: the Tooltip wrapper carries the position so
-     the bubble still anchors to the button. */
-  .gen-dock-open-wrap {
-    position: absolute;
-    top: calc(var(--topbar-height) + var(--gen-inset));
-    right: var(--gen-inset);
-    z-index: 2;
-  }
-
-  .gen-dock-open {
-    border-radius: var(--radius-md);
-    width: 32px;
-    height: 32px;
-  }
-
-  .gen-dock-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    padding: 8px 8px 8px 14px;
-    border-bottom: 1px solid var(--border-subtle);
-    flex-shrink: 0;
-  }
-
-  .gen-dock-title {
-    color: var(--text-secondary);
-  }
-
-  .gen-dock-body {
-    flex: 1;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    padding: 4px 14px 16px;
-  }
-
-  /* --------------------------------------------------------------------------
-     Dock sections
-     -------------------------------------------------------------------------- */
-  .gen-section {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    padding: 14px 0;
-    border-bottom: 1px solid var(--border-subtle);
-  }
-
-  .gen-section:last-child {
-    border-bottom: none;
-  }
-
-  .gen-section-head {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-height: 24px;
-  }
-
-  .gen-section-toggle {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    color: inherit;
-  }
-
-  .gen-chevron {
-    color: var(--text-muted);
-    transform: rotate(-90deg);
-    transition: transform var(--transition-fast);
-  }
-
-  .gen-chevron.is-open {
-    transform: rotate(0deg);
-  }
-
-  .gen-section-meta {
-    font-family: var(--font-mono);
-    font-size: 0.688rem;
-    color: var(--text-muted);
-    padding: 1px 6px;
-    border: 1px solid var(--border-subtle);
-    border-radius: 999px;
-  }
-
-  .gen-section-action {
-    margin-left: auto;
-  }
-
-  .gen-section-body {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
-
-  .gen-section-body .ui-select-wrapper {
-    width: 100%;
-  }
-
-  .gen-blank {
-    font-size: 0.857rem;
-    color: var(--text-muted);
-  }
-
-  .gen-meta-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
   }
 
   .gen-link {
     color: var(--accent);
     text-decoration: underline;
     text-underline-offset: 2px;
+    font: inherit;
+    text-transform: none;
+    letter-spacing: inherit;
+  }
+
+  .gen-meta-row {
+    display: flex;
+    align-items: center;
+    gap: var(--gen-s3);
+    flex-wrap: wrap;
   }
 
   .gen-warn {
     display: flex;
-    gap: 8px;
-    padding: 10px;
+    gap: var(--gen-s3);
+    padding: var(--gen-s3);
     border-radius: var(--radius-md);
     background-color: var(--warning-subtle);
     color: var(--warning);
@@ -632,19 +1135,25 @@
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    gap: 8px;
+    gap: var(--gen-s3);
     font-size: 0.857rem;
   }
 
   /* --------------------------------------------------------------------------
      Image staging
      -------------------------------------------------------------------------- */
+  .gen-images {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gen-s3);
+  }
+
   .gen-drop {
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 2px;
-    padding: 18px 12px;
+    padding: var(--gen-s5) var(--gen-s4);
     border: 1px dashed var(--border-strong);
     border-radius: var(--radius-md);
     color: var(--text-muted);
@@ -670,8 +1179,8 @@
 
   .gen-thumb-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(56px, 1fr));
-    gap: 8px;
+    grid-template-columns: repeat(auto-fill, minmax(52px, 1fr));
+    gap: var(--gen-s3);
   }
 
   .gen-thumb {
@@ -693,10 +1202,35 @@
     object-fit: cover;
   }
 
+  /* Stands in while a thumbnail decodes, and stays if it never does. Flex so the
+     glyph sits on the box's centre rather than an inline text baseline. */
+  .gen-thumb-fallback {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .gen-thumb-xs {
+    width: 26px;
+    height: 26px;
+    flex-shrink: 0;
+  }
+
   .gen-thumb-sm {
     width: 40px;
     height: 40px;
     flex-shrink: 0;
+  }
+
+  .gen-thumb-md {
+    width: 64px;
+    height: 64px;
+    flex-shrink: 0;
+  }
+
+  .gen-thumb.is-empty {
+    border-style: dashed;
+    background-color: transparent;
   }
 
   .gen-thumb-remove {
@@ -724,174 +1258,7 @@
 
   .gen-thumb-remove:hover {
     background-color: var(--danger);
-    color: #ffffff;
-  }
-
-  /* --------------------------------------------------------------------------
-     Run
-     -------------------------------------------------------------------------- */
-  .gen-run {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    padding: 14px 0;
-    border-bottom: 1px solid var(--border-subtle);
-  }
-
-  .gen-run-note {
-    font-size: 0.786rem;
-    color: var(--text-muted);
-    line-height: 1.5;
-    text-wrap: pretty;
-  }
-
-  /* --------------------------------------------------------------------------
-     Queue
-     -------------------------------------------------------------------------- */
-  .gen-job-list {
-    list-style: none;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .gen-job {
-    display: flex;
-    gap: 10px;
-    padding: 10px;
-    border-radius: var(--radius-md);
-    /* Set into the plate rather than onto it — --bg-block matches the plate
-       in the light theme, --bg-app is a step down from it in both. */
-    background-color: color-mix(in oklab, var(--bg-app) 60%, transparent);
-    border: 1px solid var(--border-subtle);
-  }
-
-  .gen-job-body {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-
-  .gen-job-line {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    min-width: 0;
-  }
-
-  .gen-job-name {
-    font-size: 0.857rem;
-    font-weight: 500;
-    color: var(--text-primary);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .gen-job-sub {
-    color: var(--text-muted);
-  }
-
-  .gen-job-model,
-  .gen-job-time {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .gen-job-progress {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-
-  .gen-job-error {
-    font-size: 0.786rem;
-    line-height: 1.45;
-    color: var(--danger);
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
-
-  .gen-job-actions {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    flex-wrap: wrap;
-  }
-
-  .gen-job-actions .btn-sm {
-    min-width: auto;
-    padding: 3px 8px;
-  }
-
-  /* --------------------------------------------------------------------------
-     Engine readout
-     -------------------------------------------------------------------------- */
-  .gen-kv {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 10px;
-  }
-
-  .gen-kv-value {
-    font-size: 0.857rem;
-    color: var(--text-secondary);
-    text-align: right;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  /* --------------------------------------------------------------------------
-     Outputs
-     -------------------------------------------------------------------------- */
-  .gen-output-list {
-    list-style: none;
-    display: flex;
-    flex-direction: column;
-  }
-
-  .gen-output {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 4px 0;
-  }
-
-  .gen-output:not(:last-child) {
-    border-bottom: 1px solid var(--border-subtle);
-  }
-
-  .gen-output-open {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    padding: 4px 6px;
-    margin-left: -6px;
-    border-radius: var(--radius-sm);
-    text-align: left;
-    transition: background-color var(--transition-fast);
-  }
-
-  .gen-output-open:hover {
-    background-color: var(--bg-surface-hover);
-  }
-
-  .gen-output-name {
-    font-size: 0.857rem;
-    color: var(--text-primary);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    color: var(--accent-text, #ffffff);
   }
 
   /* --------------------------------------------------------------------------
@@ -901,7 +1268,7 @@
     position: absolute;
     inset: var(--gen-inset);
     top: calc(var(--topbar-height) + var(--gen-inset));
-    z-index: 3;
+    z-index: 5;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -921,20 +1288,58 @@
     color: var(--accent);
   }
 
-  /* Narrow windows: the dock keeps its width, so the readout yields — the
-     tools act on what is on screen and have nowhere else to go. */
-  @media (max-width: 760px) {
-    .gen-view.is-docked .gen-status {
+  /* --------------------------------------------------------------------------
+     Narrow windows: the band stacks, the queue takes the full width and the
+     plates sit above it. The tools act on what is on screen, so they stay.
+     -------------------------------------------------------------------------- */
+  @media (max-width: 860px) {
+    .gen-view {
+      --gen-queue-width: 100%;
+    }
+
+    .gen-hud {
+      flex-direction: column;
+      align-items: stretch;
+      gap: var(--gen-s3);
+    }
+
+    .gen-queue {
+      order: 2;
+      max-width: none;
+    }
+
+    .gen-plates {
+      order: 1;
+    }
+  }
+
+  @media (max-width: 560px) {
+    .gen-tool-btn span {
+      display: none;
+    }
+
+    .gen-tool-btn {
+      padding: 0 var(--gen-s3);
+    }
+
+    .gen-qbar-clock {
       display: none;
     }
   }
 
   @media (prefers-reduced-motion: reduce) {
     .gen-spin,
-    .gen-dot-accent,
-    .gen-dot-warning,
     .gen-bar.is-indeterminate .gen-bar-fill {
       animation: none;
+    }
+
+    .gen-panel,
+    .gen-qbar-panel {
+      animation: none;
+    }
+
+    .gen-qbar {
+      transition: none;
     }
   }
 }

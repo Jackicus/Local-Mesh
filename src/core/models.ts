@@ -122,7 +122,8 @@ export interface ModelDownloadProgress {
 const SEED: ModelSetting = {
   key: 'seed',
   label: 'Seed',
-  description: '-1 picks a random seed for every job',
+  description:
+    'The random starting point. The same seed with the same image and settings reproduces the same mesh; -1 draws a fresh one for every job.',
   type: 'seed',
   default: -1,
 };
@@ -159,6 +160,8 @@ export const MODELS: ModelDefinition[] = [
       {
         key: 'mcResolution',
         label: 'Marching cubes resolution',
+        description:
+          'Size of the grid the surface is carved out of. Higher resolves finer detail and costs time and memory; 256 is the sweet spot, 320 rarely adds much.',
         type: 'select',
         default: 256,
         options: [
@@ -167,8 +170,30 @@ export const MODELS: ModelDefinition[] = [
           { value: 320, label: '320' },
         ],
       },
-      { key: 'chunkSize', label: 'Chunk size', description: 'Lower uses less VRAM during decode.', type: 'number', default: 8192, min: 1024, max: 65536, step: 1024, advanced: true },
-      { key: 'foregroundRatio', label: 'Foreground ratio', type: 'number', default: 0.85, min: 0.5, max: 1, step: 0.05, advanced: true },
+      {
+        key: 'chunkSize',
+        label: 'Chunk size',
+        description:
+          'How many sample points the renderer decodes at once. Lower it if decoding runs out of VRAM — slower, but the mesh comes out the same.',
+        type: 'number',
+        default: 8192,
+        min: 1024,
+        max: 65536,
+        step: 1024,
+        advanced: true,
+      },
+      {
+        key: 'foregroundRatio',
+        label: 'Foreground ratio',
+        description:
+          'How much of the frame the subject fills before it goes in. Lower leaves more margin around it; 0.85 is what the model was trained on, so big moves either way cost quality.',
+        type: 'number',
+        default: 0.85,
+        min: 0.5,
+        max: 1,
+        step: 0.05,
+        advanced: true,
+      },
     ],
     tags: ['fast', 'tiny'],
     supportsLowVram: true,
@@ -203,7 +228,8 @@ export const MODELS: ModelDefinition[] = [
       {
         key: 'variant',
         label: 'Variant',
-        description: 'Each variant is a separate checkpoint; switching reloads the model.',
+        description:
+          'Turbo is a distilled checkpoint that lands in about 5 steps; standard takes 30-50 for slightly finer detail. Each is a separate file, so switching reloads the model.',
         type: 'select',
         default: 'turbo',
         options: [
@@ -211,12 +237,33 @@ export const MODELS: ModelDefinition[] = [
           { value: 'standard', label: 'Standard (30-50 steps)' },
         ],
       },
-      { key: 'steps', label: 'Steps', type: 'number', default: 5, min: 1, max: 100, step: 1 },
-      { key: 'guidance', label: 'Guidance scale', type: 'number', default: 5, min: 0, max: 20, step: 0.5 },
+      {
+        key: 'steps',
+        label: 'Steps',
+        description:
+          'How many denoising passes the model makes on its way from noise to a shape. Turbo is tuned for about 5 and standard for 30-50; going past that is slower with little to show for it.',
+        type: 'number',
+        default: 5,
+        min: 1,
+        max: 100,
+        step: 1,
+      },
+      {
+        key: 'guidance',
+        label: 'Guidance scale',
+        description:
+          'How hard the model is pushed towards the image. Too low drifts off the reference, too high stiffens the shape and adds creases; 5 is the safe middle.',
+        type: 'number',
+        default: 5,
+        min: 0,
+        max: 20,
+        step: 0.5,
+      },
       {
         key: 'octreeResolution',
         label: 'Octree resolution',
-        description: 'Marching-cubes grid. 256 is a good default; 384+ needs more VRAM and time.',
+        description:
+          'Size of the grid the surface is carved out of. Each step up roughly doubles decode time and VRAM — 256 is a good default, 384+ wants headroom.',
         type: 'select',
         default: 256,
         options: [
@@ -226,8 +273,30 @@ export const MODELS: ModelDefinition[] = [
           { value: 512, label: '512' },
         ],
       },
-      { key: 'numChunks', label: 'Decode chunks', description: 'Higher = less VRAM during decode, slower.', type: 'number', default: 8000, min: 1000, max: 200000, step: 1000, advanced: true },
-      { key: 'mcLevel', label: 'MC level', type: 'number', default: 0, min: -1, max: 1, step: 0.01, advanced: true },
+      {
+        key: 'numChunks',
+        label: 'Decode chunks',
+        description:
+          'How many batches the decoder splits its sample points into. More chunks means less VRAM held at once and a slightly slower decode; the mesh is unchanged.',
+        type: 'number',
+        default: 8000,
+        min: 1000,
+        max: 200000,
+        step: 1000,
+        advanced: true,
+      },
+      {
+        key: 'mcLevel',
+        label: 'MC level',
+        description:
+          'The value in the density field the surface is cut at. 0 is what the model was trained for; a small offset either way fattens or shaves the surface — a last resort for pinholes or bloat.',
+        type: 'number',
+        default: 0,
+        min: -1,
+        max: 1,
+        step: 0.01,
+        advanced: true,
+      },
       SEED,
     ],
     tags: ['recommended', 'quality'],
@@ -266,7 +335,8 @@ export const MODELS: ModelDefinition[] = [
       {
         key: 'variant',
         label: 'Variant',
-        description: 'Each variant is a separate checkpoint; switching reloads the model.',
+        description:
+          'Turbo is a distilled checkpoint that lands in about 5 steps; standard takes 30-50 for slightly finer detail. Each is a separate file, so switching reloads the model.',
         type: 'select',
         default: 'turbo',
         options: [
@@ -274,12 +344,33 @@ export const MODELS: ModelDefinition[] = [
           { value: 'standard', label: 'Standard (30-50 steps)' },
         ],
       },
-      { key: 'steps', label: 'Steps', type: 'number', default: 5, min: 1, max: 100, step: 1 },
-      { key: 'guidance', label: 'Guidance scale', type: 'number', default: 5, min: 0, max: 20, step: 0.5 },
+      {
+        key: 'steps',
+        label: 'Steps',
+        description:
+          'How many denoising passes the model makes on its way from noise to a shape. Turbo is tuned for about 5 and standard for 30-50; going past that is slower with little to show for it.',
+        type: 'number',
+        default: 5,
+        min: 1,
+        max: 100,
+        step: 1,
+      },
+      {
+        key: 'guidance',
+        label: 'Guidance scale',
+        description:
+          'How hard the model is pushed towards the image. Too low drifts off the reference, too high stiffens the shape and adds creases; 5 is the safe middle.',
+        type: 'number',
+        default: 5,
+        min: 0,
+        max: 20,
+        step: 0.5,
+      },
       {
         key: 'octreeResolution',
         label: 'Octree resolution',
-        description: 'Marching-cubes grid. 384 matches the upstream demo; 512 needs more VRAM and time.',
+        description:
+          'Size of the grid the surface is carved out of. 384 matches the upstream demo; 512 costs noticeably more VRAM and time for detail the model rarely has.',
         type: 'select',
         default: 384,
         options: [
@@ -289,8 +380,30 @@ export const MODELS: ModelDefinition[] = [
           { value: 512, label: '512' },
         ],
       },
-      { key: 'numChunks', label: 'Decode chunks', description: 'Higher = less VRAM during decode, slower.', type: 'number', default: 8000, min: 1000, max: 200000, step: 1000, advanced: true },
-      { key: 'mcLevel', label: 'MC level', type: 'number', default: 0, min: -1, max: 1, step: 0.01, advanced: true },
+      {
+        key: 'numChunks',
+        label: 'Decode chunks',
+        description:
+          'How many batches the decoder splits its sample points into. More chunks means less VRAM held at once and a slightly slower decode; the mesh is unchanged.',
+        type: 'number',
+        default: 8000,
+        min: 1000,
+        max: 200000,
+        step: 1000,
+        advanced: true,
+      },
+      {
+        key: 'mcLevel',
+        label: 'MC level',
+        description:
+          'The value in the density field the surface is cut at. 0 is what the model was trained for; a small offset either way fattens or shaves the surface — a last resort for pinholes or bloat.',
+        type: 'number',
+        default: 0,
+        min: -1,
+        max: 1,
+        step: 0.01,
+        advanced: true,
+      },
       SEED,
     ],
     tags: ['quality'],
@@ -312,12 +425,33 @@ export const MODELS: ModelDefinition[] = [
     backend: 'triposg',
     requirements: 'triposg.txt',
     settings: [
-      { key: 'steps', label: 'Steps', type: 'number', default: 50, min: 1, max: 100, step: 1 },
-      { key: 'guidance', label: 'Guidance scale', type: 'number', default: 7, min: 0, max: 20, step: 0.5 },
+      {
+        key: 'steps',
+        label: 'Steps',
+        description:
+          'How many denoising passes the model makes on its way from noise to a shape. 50 is the upstream default; fewer is faster and softer, more rarely changes anything.',
+        type: 'number',
+        default: 50,
+        min: 1,
+        max: 100,
+        step: 1,
+      },
+      {
+        key: 'guidance',
+        label: 'Guidance scale',
+        description:
+          'How hard the model is pushed towards the image. 7 is the upstream default; higher hugs the reference at the risk of hard, faceted surfaces.',
+        type: 'number',
+        default: 7,
+        min: 0,
+        max: 20,
+        step: 0.5,
+      },
       {
         key: 'octreeResolution',
         label: 'Octree resolution',
-        description: 'Power of two: the decoder works in octree depths.',
+        description:
+          'Size of the grid the surface is carved out of — powers of two only, since the decoder works in octree depths. 512 needs VRAM this model has little of to spare on an 8 GB card.',
         type: 'select',
         default: 256,
         options: [
@@ -353,12 +487,33 @@ export const MODELS: ModelDefinition[] = [
     backend: 'hunyuan3d_21',
     requirements: 'hunyuan3d21.txt',
     settings: [
-      { key: 'steps', label: 'Steps', type: 'number', default: 50, min: 1, max: 100, step: 1 },
-      { key: 'guidance', label: 'Guidance scale', type: 'number', default: 5, min: 0, max: 20, step: 0.5 },
+      {
+        key: 'steps',
+        label: 'Steps',
+        description:
+          'How many denoising passes the model makes on its way from noise to a shape. 50 is the upstream default; below about 25 the surface starts to look soft.',
+        type: 'number',
+        default: 50,
+        min: 1,
+        max: 100,
+        step: 1,
+      },
+      {
+        key: 'guidance',
+        label: 'Guidance scale',
+        description:
+          'How hard the model is pushed towards the image. Too low drifts off the reference, too high stiffens the shape and adds creases; 5 is the upstream default.',
+        type: 'number',
+        default: 5,
+        min: 0,
+        max: 20,
+        step: 0.5,
+      },
       {
         key: 'octreeResolution',
         label: 'Octree resolution',
-        description: 'Marching-cubes grid. 384 is the upstream default.',
+        description:
+          'Size of the grid the surface is carved out of. 384 is the upstream default; each step up costs decode time and VRAM.',
         type: 'select',
         default: 384,
         options: [
@@ -368,9 +523,42 @@ export const MODELS: ModelDefinition[] = [
           { value: 512, label: '512 (needs headroom)' },
         ],
       },
-      { key: 'numChunks', label: 'Decode chunks', description: 'Higher = less VRAM during decode, slower.', type: 'number', default: 8000, min: 1000, max: 200000, step: 1000, advanced: true },
-      { key: 'mcLevel', label: 'MC level', type: 'number', default: 0, min: -1, max: 1, step: 0.01, advanced: true },
-      { key: 'boxV', label: 'Bounding box', description: 'Half-extent the grid is sampled over.', type: 'number', default: 1.01, min: 0.5, max: 2, step: 0.01, advanced: true },
+      {
+        key: 'numChunks',
+        label: 'Decode chunks',
+        description:
+          'How many batches the decoder splits its sample points into. More chunks means less VRAM held at once and a slightly slower decode; the mesh is unchanged.',
+        type: 'number',
+        default: 8000,
+        min: 1000,
+        max: 200000,
+        step: 1000,
+        advanced: true,
+      },
+      {
+        key: 'mcLevel',
+        label: 'MC level',
+        description:
+          'The value in the density field the surface is cut at. 0 is what the model was trained for; a small offset either way fattens or shaves the surface — a last resort for pinholes or bloat.',
+        type: 'number',
+        default: 0,
+        min: -1,
+        max: 1,
+        step: 0.01,
+        advanced: true,
+      },
+      {
+        key: 'boxV',
+        label: 'Bounding box',
+        description:
+          'Half-width of the cube the field is sampled over. Leave it at about 1; raising it only helps if the shape is being clipped at the edge of the grid, and it spends resolution on empty space.',
+        type: 'number',
+        default: 1.01,
+        min: 0.5,
+        max: 2,
+        step: 0.01,
+        advanced: true,
+      },
       SEED,
     ],
     tags: ['quality'],
@@ -398,12 +586,33 @@ export const MODELS: ModelDefinition[] = [
     backend: 'step1x3d',
     requirements: 'step1x3d.txt',
     settings: [
-      { key: 'steps', label: 'Steps', type: 'number', default: 50, min: 1, max: 100, step: 1 },
-      { key: 'guidance', label: 'Guidance scale', type: 'number', default: 7.5, min: 0, max: 20, step: 0.5 },
+      {
+        key: 'steps',
+        label: 'Steps',
+        description:
+          'How many denoising passes the model makes on its way from noise to a shape. 50 is the upstream default; below about 25 the surface starts to look soft.',
+        type: 'number',
+        default: 50,
+        min: 1,
+        max: 100,
+        step: 1,
+      },
+      {
+        key: 'guidance',
+        label: 'Guidance scale',
+        description:
+          'How hard the model is pushed towards the image. Too low drifts off the reference, too high stiffens the shape and adds creases; 7.5 is the upstream default.',
+        type: 'number',
+        default: 7.5,
+        min: 0,
+        max: 20,
+        step: 0.5,
+      },
       {
         key: 'octreeResolution',
         label: 'Octree resolution',
-        description: 'Marching-cubes grid. 384 is the upstream default.',
+        description:
+          'Size of the grid the surface is carved out of. 384 is the upstream default; each step up costs decode time and VRAM.',
         type: 'select',
         default: 384,
         options: [
@@ -413,10 +622,54 @@ export const MODELS: ModelDefinition[] = [
           { value: 512, label: '512 (needs headroom)' },
         ],
       },
-      { key: 'mcLevel', label: 'MC level', type: 'number', default: 0, min: -1, max: 1, step: 0.01, advanced: true },
-      { key: 'foregroundRatio', label: 'Foreground ratio', type: 'number', default: 0.95, min: 0.5, max: 1, step: 0.05, advanced: true },
-      { key: 'maxFaces', label: 'Max faces', description: 'The pipeline decimates above this; 0 disables it.', type: 'number', default: 200000, min: 0, max: 500000, step: 10000, advanced: true },
-      { key: 'bounds', label: 'Bounding box', description: 'Half-extent the grid is sampled over.', type: 'number', default: 1.05, min: 0.5, max: 2, step: 0.01, advanced: true },
+      {
+        key: 'mcLevel',
+        label: 'MC level',
+        description:
+          'The value in the density field the surface is cut at. 0 is what the model was trained for; a small offset either way fattens or shaves the surface — a last resort for pinholes or bloat.',
+        type: 'number',
+        default: 0,
+        min: -1,
+        max: 1,
+        step: 0.01,
+        advanced: true,
+      },
+      {
+        key: 'foregroundRatio',
+        label: 'Foreground ratio',
+        description:
+          'How much of the frame the subject fills before it goes in. Lower leaves more margin around it; 0.95 is the upstream default.',
+        type: 'number',
+        default: 0.95,
+        min: 0.5,
+        max: 1,
+        step: 0.05,
+        advanced: true,
+      },
+      {
+        key: 'maxFaces',
+        label: 'Max faces',
+        description:
+          'Face budget the model decimates down to before handing the mesh on. 0 keeps every face and leaves the trimming to a Decimate node.',
+        type: 'number',
+        default: 200000,
+        min: 0,
+        max: 500000,
+        step: 10000,
+        advanced: true,
+      },
+      {
+        key: 'bounds',
+        label: 'Bounding box',
+        description:
+          'Half-width of the cube the field is sampled over. Leave it at about 1; raising it only helps if the shape is being clipped at the edge of the grid, and it spends resolution on empty space.',
+        type: 'number',
+        default: 1.05,
+        min: 0.5,
+        max: 2,
+        step: 0.01,
+        advanced: true,
+      },
       SEED,
     ],
     tags: ['quality'],
@@ -453,10 +706,50 @@ export const MODELS: ModelDefinition[] = [
     backend: 'trellis',
     requirements: 'trellis.txt',
     settings: [
-      { key: 'ssSteps', label: 'Structure steps', description: 'Sparse-structure sampler: decides which voxels are occupied.', type: 'number', default: 12, min: 1, max: 50, step: 1 },
-      { key: 'ssGuidance', label: 'Structure guidance', type: 'number', default: 7.5, min: 0, max: 10, step: 0.5 },
-      { key: 'slatSteps', label: 'Latent steps', description: 'Structured-latent sampler: fills the occupied voxels with geometry.', type: 'number', default: 12, min: 1, max: 50, step: 1 },
-      { key: 'slatGuidance', label: 'Latent guidance', type: 'number', default: 3, min: 0, max: 10, step: 0.5 },
+      {
+        key: 'ssSteps',
+        label: 'Structure steps',
+        description:
+          'Denoising passes for the sparse-structure sampler, which decides which voxels the object occupies. This settles the silhouette; 12 is usually enough.',
+        type: 'number',
+        default: 12,
+        min: 1,
+        max: 50,
+        step: 1,
+      },
+      {
+        key: 'ssGuidance',
+        label: 'Structure guidance',
+        description:
+          'How closely that voxel layout follows the image. Higher hugs the reference; too high blocks the shape out heavy and chunky.',
+        type: 'number',
+        default: 7.5,
+        min: 0,
+        max: 10,
+        step: 0.5,
+      },
+      {
+        key: 'slatSteps',
+        label: 'Latent steps',
+        description:
+          'Denoising passes for the structured-latent sampler, which fills the occupied voxels with actual surface. More steps sharpen detail and cost time.',
+        type: 'number',
+        default: 12,
+        min: 1,
+        max: 50,
+        step: 1,
+      },
+      {
+        key: 'slatGuidance',
+        label: 'Latent guidance',
+        description:
+          'How closely that surface detail follows the image. 3 is the upstream default; higher exaggerates whatever the image shows, mistakes included.',
+        type: 'number',
+        default: 3,
+        min: 0,
+        max: 10,
+        step: 0.5,
+      },
       SEED,
     ],
     tags: ['experimental'],
@@ -491,7 +784,16 @@ export const MODELS: ModelDefinition[] = [
           { value: 'box', label: 'Box' },
         ],
       },
-      { key: 'seconds', label: 'Fake duration (s)', type: 'number', default: 4, min: 0, max: 60, step: 1 },
+      {
+        key: 'seconds',
+        label: 'Fake duration (s)',
+        description: 'How long the fake job pretends to work, for exercising the queue, progress and logs.',
+        type: 'number',
+        default: 4,
+        min: 0,
+        max: 60,
+        step: 1,
+      },
       SEED,
     ],
     tags: ['tiny', 'no-gpu'],

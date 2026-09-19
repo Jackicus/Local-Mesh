@@ -1,19 +1,31 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import type { LogChannel, LogEntry } from '../../../core/types';
+import React, { useEffect, useState } from 'react';
+import type { LogChannel } from '../../../core/types';
 import { Button, Form, Modal, Tooltip, toast } from '../../components';
 import { AlertTriangleIcon, ChevronDownIcon, EraserIcon } from '../../assets/icons';
 import { useLogStore } from '../../stores/logStore';
 import { LogList, MAX_RENDERED } from './LogList';
-import { LogToolbar, type LevelFilter, type SourceFilter } from './LogToolbar';
+import { LogToolbar } from './LogToolbar';
 import { formatEntryText } from './LogRow';
-
-const LEVEL_RANK = { debug: 0, info: 1, warn: 2, error: 3 } as const;
-const MIN_RANK: Record<LevelFilter, number> = { all: 0, info: 1, warn: 2, error: 3 };
 
 export const CHANNEL_TITLE: Record<LogChannel, string> = {
   general: 'general.log',
   errors: 'errors.log',
   generation: 'generation.log',
+};
+
+const EMPTY_COPY: Record<LogChannel, { title: string; hint: string }> = {
+  general: {
+    title: 'Nothing logged yet',
+    hint: 'Entries land here as the app, the environment setup and the python worker write them.',
+  },
+  errors: {
+    title: 'No errors',
+    hint: 'Anything that fails in the app, the environment or the worker is copied here as it happens.',
+  },
+  generation: {
+    title: 'No generation runs yet',
+    hint: 'Start a job from the Generate view and its progress appears here line by line.',
+  },
 };
 
 interface LogsPanelProps {
@@ -22,38 +34,23 @@ interface LogsPanelProps {
 }
 
 /**
- * The log reader itself — channel switch, filters, list. Mounted by the shell's
- * bottom dock; it fills whatever height its container gives it.
+ * The log reader itself — channel switch, three actions, list. Mounted by the
+ * shell's bottom dock; it fills whatever height its container gives it.
  */
 export const LogsPanel: React.FC<LogsPanelProps> = ({ onCollapse }) => {
   const [logs, logActions] = useLogStore();
   const [channel, setChannel] = useState<LogChannel>('general');
-  const [level, setLevel] = useState<LevelFilter>('all');
-  const [source, setSource] = useState<SourceFilter>('all');
-  const [search, setSearch] = useState('');
-  const [follow, setFollow] = useState(true);
-  const [groupByJob, setGroupByJob] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
 
-  // Mounted only while the dock is expanded, so "visible" is simply "errors".
+  // Mounted only while the dock is open, so "visible" is simply "errors".
   useEffect(() => {
     if (channel === 'errors') logActions.markErrorsSeen();
   }, [channel, logs.entries.errors.length, logActions]);
 
-  const all = logs.entries[channel];
-  const filtered = useMemo(() => {
-    const needle = search.trim().toLowerCase();
-    const minRank = MIN_RANK[level];
-    return all.filter(
-      (e: LogEntry) =>
-        LEVEL_RANK[e.level] >= minRank &&
-        (source === 'all' || e.source === source) &&
-        (needle === '' || e.message.toLowerCase().includes(needle) || (e.jobId?.toLowerCase().includes(needle) ?? false))
-    );
-  }, [all, level, source, search]);
+  const entries = logs.entries[channel];
 
   const copyVisible = async () => {
-    const tail = filtered.slice(-MAX_RENDERED);
+    const tail = entries.slice(-MAX_RENDERED);
     try {
       await navigator.clipboard.writeText(tail.map(formatEntryText).join('\n'));
       toast.success(`Copied ${tail.length} entries`);
@@ -90,21 +87,11 @@ export const LogsPanel: React.FC<LogsPanelProps> = ({ onCollapse }) => {
         />
 
         <LogToolbar
-          level={level}
-          onLevel={setLevel}
-          search={search}
-          onSearch={setSearch}
-          source={source}
-          onSource={setSource}
-          follow={follow}
-          onFollow={setFollow}
-          showGroup={channel === 'generation'}
-          groupByJob={groupByJob}
-          onGroupByJob={setGroupByJob}
-          visibleCount={filtered.length}
+          fileName={CHANNEL_TITLE[channel]}
+          entryCount={entries.length}
           onCopy={copyVisible}
-          onClear={() => setConfirmClear(true)}
           onOpenFolder={openFolder}
+          onClear={() => setConfirmClear(true)}
         />
 
         {onCollapse && (
@@ -116,13 +103,13 @@ export const LogsPanel: React.FC<LogsPanelProps> = ({ onCollapse }) => {
         )}
       </div>
 
+      {/* Keyed on the channel so switching starts at the newest entry again */}
       <LogList
-        entries={filtered}
-        channelTotal={all.length}
+        key={channel}
+        entries={entries}
         showJob={channel === 'generation'}
-        groupByJob={channel === 'generation' && groupByJob}
-        follow={follow}
-        onUserScrolledUp={() => setFollow(false)}
+        emptyTitle={EMPTY_COPY[channel].title}
+        emptyHint={EMPTY_COPY[channel].hint}
       />
 
       <Modal

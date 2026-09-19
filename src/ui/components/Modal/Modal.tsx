@@ -17,6 +17,9 @@ export interface ModalProps {
   className?: string;
 }
 
+const FOCUSABLE_SELECTOR =
+  'a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])';
+
 interface ModalComponent extends React.FC<ModalProps> {
   Header: typeof ModalHeader;
   Body: typeof ModalBody;
@@ -36,13 +39,23 @@ export const Modal: ModalComponent = ({
   className = '',
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const returnFocusRef = useRef<HTMLElement | null>(null);
   const titleId = useId();
 
   // Focus depends only on isOpen — bundling it with the Escape listener would
   // re-focus the dialog (stealing focus from inputs inside it) every time a
   // parent re-render changes the inline onClose identity
   useEffect(() => {
-    if (isOpen) containerRef.current?.focus();
+    if (!isOpen) return;
+    // Remember what had focus so closing hands it back rather than dumping
+    // focus on <body>, where the next Tab restarts from the top of the window
+    returnFocusRef.current = document.activeElement as HTMLElement | null;
+    containerRef.current?.focus();
+    return () => {
+      const target = returnFocusRef.current;
+      returnFocusRef.current = null;
+      if (target && target.isConnected) target.focus?.();
+    };
   }, [isOpen]);
 
   useEffect(() => {
@@ -51,6 +64,31 @@ export const Modal: ModalComponent = ({
     const handleKeyDown = (e: KeyboardEvent) => {
       if (closeOnEscape && e.key === 'Escape') {
         onClose();
+        return;
+      }
+      // Keep Tab inside the dialog: without this the focus ring walks out into
+      // the shell behind the backdrop, which is inert to the eye but not to Tab
+      if (e.key !== 'Tab') return;
+      const container = containerRef.current;
+      if (!container) return;
+      const focusables = Array.from(
+        container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)
+      ).filter((el) => !el.hasAttribute('disabled') && el.tabIndex !== -1);
+      if (focusables.length === 0) {
+        e.preventDefault();
+        container.focus();
+        return;
+      }
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      const active = document.activeElement as HTMLElement | null;
+      const inside = active ? container.contains(active) : false;
+      if (e.shiftKey && (!inside || active === first || active === container)) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && (!inside || active === last)) {
+        e.preventDefault();
+        first.focus();
       }
     };
 

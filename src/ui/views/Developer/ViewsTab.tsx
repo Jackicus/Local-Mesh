@@ -14,7 +14,7 @@ export const ViewsTab: React.FC = () => {
           { name: 'Generate', note: 'full-bleed: drop images, pick a pipeline, watch the queue and preview meshes' },
           { name: 'Pipelines', note: 'node-graph editor for image → mesh pipelines saved under ~/.local-mesh/pipelines' },
           { name: 'Models', note: 'Python environment status/setup and the model registry with download, load, delete' },
-          { name: 'Logs', note: 'not a view — LogsPanel lives in the shell bottom dock (Ctrl/Cmd + J)' },
+          { name: 'Logs', note: 'not a view — LogsPanel lives in the shell bottom dock, which renders only while open (Ctrl/Cmd + J)' },
           { name: 'Developer', note: 'this view — six tabs, one per src/ui directory' },
           { name: 'Settings', note: 'Appearance, Generation (device, precision, idle unload) and Storage tabs' },
           { name: 'Help', note: 'getting-started guide, keyboard shortcuts and the repo README, in-app' },

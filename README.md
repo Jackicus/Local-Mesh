@@ -68,19 +68,24 @@ work end to end before downloading gigabytes.
 
 ## The app
 
-- **Generate** — full-screen three.js viewer with a floating dock: pipeline
-  picker, image drop zone, job queue with live timers and progress, engine
-  panel with VRAM, recent outputs. Mesh tools reduce and smooth a result in
-  place, with undo.
+- **Generate** — full-bleed three.js viewer with floating plates: a composer
+  (pipeline picker, image drop zone, Generate), the job queue with live timers
+  and progress, recent outputs, and camera controls. The mesh tools run the
+  same post-process ops on the result in place — floaters, degenerate faces,
+  holes, decimation, smoothing, normals — with undo. Worker state, the loaded
+  model, VRAM and the idle-unload countdown live in the left dock's footer, so
+  they follow you into every view.
 - **Pipelines** — the node editor. Image Input, Background Removal, Mesh
-  Generator (model and its settings), Post-Process (floaters, degenerate
-  faces, decimation), Mesh Export (glb / obj / stl / ply, name pattern).
+  Generator (model and its settings), one node per mesh op (remove floaters,
+  remove degenerate faces, fill holes, decimate, smooth, recompute normals —
+  chained in any order), Mesh Export (glb / obj / stl / ply, name pattern).
 - **Models** — environment status and setup, per-model weights and
   dependency steps, load and unload.
-- **Logs** — bottom dock, `Ctrl+J`. Filter by level, source and text; group
-  generation entries by job.
-- **Settings** — theme and accent, idle unload, device and precision,
-  low-VRAM mode.
+- **Logs** — bottom dock, `Ctrl+J`. Three channels (general, errors,
+  generation), each with copy, open folder and clear; closed, it takes no
+  space at all.
+- **Settings** — theme, accent and font; idle unload, device, precision and
+  low-VRAM mode; where everything lives on disk, with a reset.
 
 ## How it works
 
@@ -102,9 +107,10 @@ resources/python worker, backends, requirements, manifest
 ## Adding a model
 
 Add an entry to `src/core/models.ts` (repo, sizes, settings schema), a backend
-in `resources/python/backends/`, and a line in `resources/python/manifest.json`
-for its requirements and any git repos. The Models view, the node editor's
-settings form and the downloader pick it up from there.
+in `resources/python/backends/` with its id → backend line in
+`backends/registry.py`, and a line in `resources/python/manifest.json` for its
+requirements and any git repos. The Models view, the node editor's settings
+form and the downloader pick it up from there.
 
 ## Hardware notes
 

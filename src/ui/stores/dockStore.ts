@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react';
 
-/** The log dock pinned to the bottom of the content area. */
+/** The log dock pinned to the bottom of the content area; closed it renders nothing. */
 export interface BottomDockState {
   isOpen: boolean;
   height: number;
@@ -23,8 +23,6 @@ export const DOCK_DEFAULT_WIDTH = 240;
 export const BOTTOM_DOCK_MIN_HEIGHT = 200;
 export const BOTTOM_DOCK_MAX_HEIGHT = 600;
 export const BOTTOM_DOCK_DEFAULT_HEIGHT = 300;
-/** Height of the collapsed strip; mirrored by --bottomdock-bar-height. */
-export const BOTTOM_DOCK_BAR_HEIGHT = 30;
 
 const BOTTOM_STORAGE_KEY = 'local-mesh.bottom-dock';
 

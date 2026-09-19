@@ -15,8 +15,11 @@ hf_download.py         one-shot weight downloader with JSON progress
 worker.py              the long-lived generation process
 backends/              one module per model, plus the shared Backend base and the registry
 requirements/          base.txt (always) + one file per model
-shims/                 CPU stand-ins for CUDA extensions we refuse to build
-                       (torchmcubes for TripoSR, diso for TripoSG/Hunyuan's DMC path)
+shims/                 stand-ins for packages we refuse to build or pull in —
+                       CUDA extensions (torchmcubes, diso, kaolin, open3d) and
+                       optional cruft a repo imports at module scope (wandb,
+                       streaming); one package directory each, appended to
+                       sys.path by the worker so a real install always wins
 ```
 
 ## How main invokes each script
@@ -83,7 +86,7 @@ printf '%s\n' \
   '{"cmd":"load","model_id":"mock","model_dir":"/tmp","device":"cpu","precision":"fp32","low_vram":false}' \
   '{"cmd":"generate","job":{"jobId":"j1","modelId":"mock","imagePath":"in.png","removeBackground":false,
      "settings":{"shape":"torus-knot","seconds":1,"seed":7},
-     "postProcess":{"removeFloaters":true,"removeDegenerateFaces":true,"maxFaces":null,"smoothNormals":false},
+     "postProcess":[{"op":"remove-floaters","threshold":0.1},{"op":"remove-degenerate","mergeVertices":true}],
      "export":{"format":"glb","outputDir":"/tmp/out","baseName":"demo"}}}' \
   '{"cmd":"shutdown"}' | python -u worker.py
 ```

@@ -36,6 +36,32 @@ from .base import Backend as BaseBackend, Cancelled, check_cancel, scan_weight_b
 
 SUBFOLDER = "Step1X-3D-Geometry-1300m"
 
+
+def mesh_from_output(output: Any):
+    """Pull the first trimesh out of a `Step1X3DGeometryPipelineOutput`.
+
+    The field is singular - `return Step1X3DGeometryPipelineOutput(image=..., mesh=mesh)`
+    - but with `output_type="trimesh"` it holds the *list* of per-batch meshes,
+    so it is indexed, not returned whole. A single object is accepted too, and
+    the plural spelling is kept as a fallback in case a future revision of the
+    clone renames the field.
+
+    Returns None when the pipeline ran but produced no geometry; raises when
+    neither field is present, which means the clone is a version this backend
+    does not understand.
+    """
+    meshes = getattr(output, "mesh", None)
+    if meshes is None:
+        meshes = getattr(output, "meshes", None)
+    if meshes is None:
+        raise RuntimeError(
+            f"Step1X-3D's pipeline returned a {type(output).__name__} with no 'mesh' "
+            "field. The cloned Step1X-3D repo is probably a different version than this "
+            "backend expects - re-clone it from the Models view.")
+    if hasattr(meshes, "faces"):  # a bare trimesh rather than a batch
+        return meshes
+    return meshes[0] if len(meshes) else None
+
 _PCT_CONDITION = 12.0
 _PCT_DIFFUSION_START = 18.0
 _PCT_DIFFUSION_END = 74.0
@@ -67,7 +93,7 @@ class Backend(BaseBackend):
             raise FileNotFoundError(
                 f"{index} is missing; re-download the model from the Models view")
 
-        self.log("info", f"loading {SUBFOLDER} from {self.model_dir}")
+        self.log("info", f"weights subfolder: {SUBFOLDER}")
         pipeline = Step1X3DGeometryPipeline.from_pretrained(self.model_dir, subfolder=SUBFOLDER)
 
         dtype = self.dtype or torch.float16
@@ -148,11 +174,11 @@ class Backend(BaseBackend):
             self._remove_progress_hook()
         check_cancel(cancel)
 
-        meshes = getattr(output, "mesh", None) or []
-        mesh = meshes[0] if meshes else None
+        mesh = mesh_from_output(output)
         if mesh is None or len(mesh.faces) == 0:
             raise RuntimeError(
-                "Step1X-3D produced an empty mesh - try a different seed or more steps")
+                "Step1X-3D's marching cubes found no surface at this mc level - "
+                "try a lower mc level, a different seed, or more steps")
         self.progress(88.0, "decode", f"{len(mesh.faces)} faces")
         return mesh
 

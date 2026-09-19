@@ -3,8 +3,19 @@ import type { PipelineNode, PortType } from '../../../core/pipeline';
 import { NODE_DEFINITIONS } from '../../../core/pipeline';
 import { NODE_W, PORT_ROW_H, nodeHue, portColor, type Point } from './canvasGeometry';
 import { NodeBody } from './nodes';
+import { InfoTip } from './InfoTip';
 
 const DRAG_THRESHOLD = 3;
+
+/** Capture calls throw once the pointer is gone; a lost capture is not fatal. */
+function capture(el: Element, pointerId: number, on: boolean): void {
+  try {
+    if (on) el.setPointerCapture(pointerId);
+    else el.releasePointerCapture(pointerId);
+  } catch {
+    /* pointer already released by the browser */
+  }
+}
 
 export interface NodeCardProps {
   node: PipelineNode;
@@ -39,7 +50,7 @@ export const NodeCard: React.FC<NodeCardProps> = ({
   const onHeaderPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
     drag.current = { startX: e.clientX, startY: e.clientY, origin: node.position, moving: false };
-    e.currentTarget.setPointerCapture(e.pointerId);
+    capture(e.currentTarget, e.pointerId, true);
   };
 
   const dragPosition = (e: React.PointerEvent): Point | null => {
@@ -52,6 +63,16 @@ export const NodeCard: React.FC<NodeCardProps> = ({
   const onHeaderPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     const d = drag.current;
     if (!d) return;
+    // The canvas steals the capture when a pan starts over a node (space held,
+    // middle button), so this header may never see its pointerup. Without this
+    // the stale drag makes a later *hover* move the node.
+    if ((e.buttons & 1) === 0) {
+      drag.current = null;
+      // Put the node back where it started; the canvas only drops its live
+      // drag state on a drag end, so it has to hear about the abort.
+      if (d.moving) onDragEnd(node.id, d.origin);
+      return;
+    }
     if (!d.moving) {
       if (Math.hypot(e.clientX - d.startX, e.clientY - d.startY) < DRAG_THRESHOLD) return;
       d.moving = true;
@@ -71,7 +92,9 @@ export const NodeCard: React.FC<NodeCardProps> = ({
       cancelAnimationFrame(frame.current);
       frame.current = null;
     }
-    e.currentTarget.releasePointerCapture(e.pointerId);
+    capture(e.currentTarget, e.pointerId, false);
+    // Cancel still commits: the canvas's live-drag state is only cleared by
+    // onDragEnd, so bailing here would pin the node to an uncommitted spot.
     if (!d?.moving) return;
     const zoom = getZoom();
     onDragEnd(node.id, {
@@ -96,7 +119,6 @@ export const NodeCard: React.FC<NodeCardProps> = ({
     >
       <div
         className="pipe-node-header"
-        title={def.description}
         onPointerDown={onHeaderPointerDown}
         onPointerMove={onHeaderPointerMove}
         onPointerUp={onHeaderPointerUp}
@@ -104,6 +126,7 @@ export const NodeCard: React.FC<NodeCardProps> = ({
       >
         <span className="pipe-node-dot" style={{ background: portColor(hue) }} aria-hidden="true" />
         <span className="pipe-node-title">{def.label}</span>
+        <InfoTip text={def.description} label={`the ${def.label} node`} />
       </div>
 
       {portRows > 0 && (

@@ -105,7 +105,8 @@ class Backend(BaseBackend):
             return wanted
         for name in subfolders.values():
             if os.path.isdir(os.path.join(self.model_dir, name)):
-                self.log("warn", f"{wanted} is not downloaded; falling back to {name}")
+                self.log("warn", f"the {wanted} variant is not downloaded, falling back to {name}; "
+                                 "re-download the model from the Models view to get the one you chose")
                 return name
         raise FileNotFoundError(
             f"no {self.subfolder_glob} subfolder under {self.model_dir}; "
@@ -116,7 +117,7 @@ class Backend(BaseBackend):
         from hy3dgen.shapegen import Hunyuan3DDiTFlowMatchingPipeline
 
         self._release()
-        self.log("info", f"loading {subfolder} from {self.model_dir}")
+        self.log("info", f"weights subfolder: {subfolder}")
         pipeline = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(
             self.model_dir,
             subfolder=subfolder,

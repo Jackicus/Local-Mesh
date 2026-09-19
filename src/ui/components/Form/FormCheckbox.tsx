@@ -8,6 +8,8 @@ export interface FormCheckboxProps {
   description?: React.ReactNode;
   disabled?: boolean;
   isRow?: boolean;
+  /** FormRow clones a generated id onto its control child — drop it and the row's <label for> points at nothing */
+  id?: string;
   className?: string;
 }
 
@@ -18,6 +20,7 @@ export const FormCheckbox: React.FC<FormCheckboxProps> = ({
   description,
   disabled = false,
   isRow = false,
+  id,
   className = '',
 }) => {
   const baseClass = isRow ? 'ui-checkbox-row' : 'ui-checkbox-label';
@@ -28,6 +31,7 @@ export const FormCheckbox: React.FC<FormCheckboxProps> = ({
     >
       <input
         type="checkbox"
+        id={id}
         checked={checked}
         disabled={disabled}
         onChange={(e) => onChange(e.target.checked)}

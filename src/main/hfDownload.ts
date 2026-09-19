@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { once } from 'node:events';
+import { formatBytes } from './format';
 
 /**
  * A minimal snapshot_download in Node: list a Hugging Face repo's tree, filter
@@ -52,9 +53,15 @@ export interface DownloadSnapshotOptions {
   token?: string;
   signal?: AbortSignal;
   onProgress?: (progress: SnapshotProgress) => void;
-  /** Coarse, non-throttled notes worth logging (repo started, file skipped, …). */
-  onLog?: (message: string) => void;
+  /**
+   * Non-throttled notes worth logging. The level matters: a repo of 300 shards
+   * would otherwise write 300 timeline entries, so per-file notes come through
+   * as 'debug' and only the per-repo summary and retries rise above it.
+   */
+  onLog?: (message: string, level?: SnapshotLogLevel) => void;
 }
+
+export type SnapshotLogLevel = 'debug' | 'info' | 'warn';
 
 /** What one repo of the set contributed, as recorded in the manifest. */
 export interface SnapshotRepoResult {
@@ -112,6 +119,19 @@ export function matchesAllowPatterns(filePath: string, patterns: string[] | unde
   return patterns.some((p) => globToRegExp(p).test(filePath));
 }
 
+/**
+ * A repo-relative path from the tree API is remote input, and it decides where
+ * bytes land on disk. Anything absolute, Windows-rooted or carrying a `.`/`..`
+ * segment is refused rather than sanitised: a repo that needs one is broken,
+ * and quietly rewriting it would still be writing somewhere nobody asked for.
+ */
+export function isSafeRepoPath(p: string): boolean {
+  if (typeof p !== 'string' || p === '' || p.length > 1024) return false;
+  if (p.includes('\0') || p.includes('\\')) return false;
+  if (path.posix.isAbsolute(p) || path.win32.isAbsolute(p)) return false;
+  return p.split('/').every((segment) => segment !== '' && segment !== '.' && segment !== '..');
+}
+
 interface TreeItem {
   type?: 'file' | 'directory';
   path?: string;
@@ -165,6 +185,8 @@ export async function listRepoFiles(
     const items = (await res.json()) as TreeItem[];
     for (const item of items) {
       if (item.type !== 'file' || !item.path) continue;
+      // Never let a repo name a destination outside the snapshot directory.
+      if (!isSafeRepoPath(item.path)) continue;
       files.push({ path: item.path, size: item.lfs?.size ?? item.size ?? 0 });
     }
     url = nextLink(res.headers.get('link'));
@@ -182,8 +204,13 @@ function fileSize(file: string): number {
 }
 
 async function closeStream(stream: fs.WriteStream): Promise<void> {
-  if (stream.destroyed) return;
-  await new Promise<void>((resolve) => stream.end(resolve));
+  if (stream.destroyed || stream.closed) return;
+  // A stream that errored is destroyed without ever calling end()'s callback,
+  // so wait for whichever of the two arrives first.
+  await new Promise<void>((resolve) => {
+    stream.once('close', () => resolve());
+    stream.end(() => resolve());
+  });
 }
 
 interface FileContext {
@@ -203,6 +230,9 @@ interface FileContext {
  * there, then rename. Returns the number of bytes pulled over the network.
  */
 async function downloadFile(file: SnapshotFile, ctx: FileContext): Promise<number> {
+  // listRepoFiles already filters these out; this is the check that matters,
+  // because it is the one standing between a remote name and path.join.
+  if (!isSafeRepoPath(file.path)) throw new Error(`Refusing unsafe file path from ${ctx.repo}: ${file.path}`);
   const final = path.join(ctx.dest, file.path);
   const part = `${final}.part`;
   fs.mkdirSync(path.dirname(final), { recursive: true });
@@ -224,6 +254,14 @@ async function downloadFile(file: SnapshotFile, ctx: FileContext): Promise<numbe
   const url = `${API_BASE}/${ctx.repo}/resolve/main/${file.path.split('/').map(encodeURIComponent).join('/')}`;
   const headers = { ...ctx.headers, ...(onDisk > 0 ? { Range: `bytes=${onDisk}-` } : {}) };
   const res = await fetch(url, { headers, ...(ctx.signal ? { signal: ctx.signal } : {}) });
+  if (res.status === 416 && onDisk > 0) {
+    // The `.part` is at or past the length the server will serve — a stale part
+    // from another revision, or a complete one for a file the tree API gave no
+    // size for. Drop it so the retry starts clean rather than failing for good.
+    fs.rmSync(part, { force: true });
+    ctx.setFileBytes(file.path, 0);
+    throw new Error(`Stale partial download for ${file.path}; starting it again.`);
+  }
   if (!res.ok) throw httpError(res.status, ctx.repo, `${ctx.repo}/${file.path}`);
   if (!res.body) throw new Error(`Empty response body for ${file.path}.`);
 
@@ -234,9 +272,17 @@ async function downloadFile(file: SnapshotFile, ctx: FileContext): Promise<numbe
   if (!resuming) ctx.setFileBytes(file.path, 0);
 
   const stream = fs.createWriteStream(part, { flags: resuming ? 'a' : 'w' });
+  // An unhandled 'error' on a write stream takes the whole main process down,
+  // and a disk that fills mid-download is the ordinary way to get one. Hold on
+  // to the first error and raise it as a normal (retryable) failure instead.
+  let streamError: Error | null = null;
+  stream.on('error', (err: Error) => {
+    streamError ??= err;
+  });
   let received = 0;
   try {
     for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
+      if (streamError) throw streamError;
       if (!stream.write(chunk)) await once(stream, 'drain');
       received += chunk.byteLength;
       ctx.setFileBytes(file.path, base + received);
@@ -244,13 +290,25 @@ async function downloadFile(file: SnapshotFile, ctx: FileContext): Promise<numbe
   } finally {
     await closeStream(stream);
   }
+  if (streamError) throw streamError;
   throwIfAborted(ctx.signal);
+  // A response that stops short would otherwise be renamed into place and read
+  // as a finished file; leave the `.part` alone so the retry resumes it.
+  if (file.size > 0 && base + received < file.size) {
+    throw new Error(
+      `${file.path} ended early (${base + received} of ${file.size} bytes); the transfer was cut short.`
+    );
+  }
   fs.renameSync(part, final);
   return received;
 }
 
 /** Retry around downloadFile; each attempt resumes from the surviving `.part`. */
-async function downloadFileWithRetries(file: SnapshotFile, ctx: FileContext, onLog?: (m: string) => void): Promise<number> {
+async function downloadFileWithRetries(
+  file: SnapshotFile,
+  ctx: FileContext,
+  onLog?: (m: string, level?: SnapshotLogLevel) => void
+): Promise<number> {
   let lastError: unknown;
   for (let attempt = 1; attempt <= ATTEMPTS_PER_FILE; attempt++) {
     try {
@@ -258,11 +316,13 @@ async function downloadFileWithRetries(file: SnapshotFile, ctx: FileContext, onL
     } catch (err) {
       if (isAborted(err) || ctx.signal?.aborted) throw new AbortedError();
       lastError = err;
-      // A 4xx will not fix itself; only transport failures are worth retrying.
+      // A 4xx will not fix itself — except the ones that say "later": Hugging
+      // Face rate-limits large snapshots with 429, and a request that times out
+      // at the edge comes back 408. Everything else 4xx fails for good.
       const message = err instanceof Error ? err.message : String(err);
-      if (/HTTP (4\d\d)/.test(message)) throw err;
+      if (/HTTP 4\d\d/.test(message) && !/HTTP (408|425|429)/.test(message)) throw err;
       if (attempt < ATTEMPTS_PER_FILE) {
-        onLog?.(`${file.path}: ${message} — retrying (${attempt + 1}/${ATTEMPTS_PER_FILE})`);
+        onLog?.(`${file.path}: ${message} — retrying (${attempt + 1}/${ATTEMPTS_PER_FILE})`, 'warn');
         await new Promise((r) => setTimeout(r, RETRY_DELAY_MS * attempt));
       }
     }
@@ -311,7 +371,11 @@ export async function downloadSnapshot(opts: DownloadSnapshotOptions): Promise<S
       );
     }
     const bytes = files.reduce((sum, f) => sum + f.size, 0);
-    onLog?.(`${spec.repo}: ${files.length} of ${all.length} files selected, ${bytes} bytes → ${dir || '.'}`);
+    onLog?.(
+      `${spec.repo}: ${files.length} of ${all.length} files selected, ${formatBytes(bytes)}` +
+        `${dir ? ` → ${dir}/` : ''}`,
+      'info'
+    );
     plans.push({ repo: spec.repo, dir, target: dir ? path.join(dest, dir) : dest, files, bytes });
   }
 
@@ -353,21 +417,37 @@ export async function downloadSnapshot(opts: DownloadSnapshotOptions): Promise<S
       }
       pending.push(file);
     }
-    if (pending.length < plan.files.length) {
-      onLog?.(`${plan.repo}: ${plan.files.length - pending.length} files already present`);
-    }
+    const present = plan.files.length - pending.length;
     report('', true);
-    if (pending.length === 0) continue;
-    onLog?.(`${plan.repo}: fetching ${pending.length} files into ${plan.target}`);
+    if (pending.length === 0) {
+      onLog?.(`${plan.repo}: all ${plan.files.length} files already on disk, nothing to fetch`, 'info');
+      continue;
+    }
+    const pendingBytes = pending.reduce((sum, f) => sum + f.size, 0);
+    onLog?.(
+      `${plan.repo}: fetching ${pending.length} files (${formatBytes(pendingBytes)})` +
+        `${present > 0 ? `, ${present} already on disk` : ''}`,
+      'info'
+    );
 
     let next = 0;
+    // Promise.all rejects on the first failure but leaves its siblings running,
+    // and a worker still writing `.part` files after downloadSnapshot has
+    // returned would collide with the retry the user is about to start.
+    let failed = false;
     const worker = async (): Promise<void> => {
       for (;;) {
+        if (failed) return;
         throwIfAborted(signal);
         const file = pending[next++];
         if (!file) return;
-        onLog?.(`${plan.repo}: fetching ${file.path} (${file.size} bytes)`);
-        await downloadFileWithRetries(file, ctx, onLog);
+        onLog?.(`${plan.repo}: fetching ${file.path} (${formatBytes(file.size)})`);
+        try {
+          await downloadFileWithRetries(file, ctx, onLog);
+        } catch (err) {
+          failed = true;
+          throw err;
+        }
         report(destPath(plan.dir, file.path), true);
       }
     };

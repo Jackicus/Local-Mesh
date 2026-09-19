@@ -540,6 +540,13 @@
     box-shadow: 0 0 0 1px var(--accent), var(--pipe-node-shadow-lifted);
   }
 
+  /* The card is `tabIndex=0` and drops the reset's outline, so keyboard focus
+     needs a ring of its own — distinct from the selected border. */
+  .pipe-node:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
   .pipe-node-header {
     display: flex;
     align-items: center;
@@ -799,6 +806,80 @@
     transform: rotate(90deg);
   }
 
+  /* The disclosure's own info mark sits beside the toggle, not inside it. */
+  .pipe-disclosure-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  /* --------------------------------------------------------------------------
+     Info marks — the "(i)" the editor explains itself through. Quiet enough to
+     read as punctuation next to a label, forward on hover and focus. The
+     bubble itself is portalled out to <body> (see InfoTip.tsx) and is styled
+     at the bottom of this file, outside .pipe-view.
+     -------------------------------------------------------------------------- */
+  .pipe-info-slot {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+  }
+
+  .pipe-info {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    color: var(--text-muted);
+    opacity: 0.55;
+    cursor: help;
+    transition: opacity var(--transition-fast), color var(--transition-fast),
+      background-color var(--transition-fast);
+  }
+
+  .pipe-info:hover {
+    opacity: 1;
+    color: var(--text-primary);
+    background-color: var(--bg-surface-hover);
+  }
+
+  .pipe-info:focus-visible {
+    opacity: 1;
+    color: var(--text-primary);
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+
+  /* The node header's mark hangs off the right end of the drag handle. */
+  .pipe-node-header .pipe-info-slot {
+    margin-left: auto;
+  }
+
+  /* Labels become the row that carries the mark. Scoped to node bodies: the
+     dock and toolbar share .pipe-field-label's voice but not its layout. */
+  .pipe-node-body .pipe-field-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+  }
+
+  /* aria-describedby needs real text; the bubble is pointer-driven chrome. */
+  .pipe-info-sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    clip-path: inset(50%);
+  }
+
   /* Image Input: thumbnail + file name + clear */
   .pipe-image-pick {
     display: flex;
@@ -894,5 +975,43 @@
 
   .pipe-issue.warning {
     color: var(--warning);
+  }
+}
+
+/* ==========================================================================
+   The info bubble itself. InfoTip portals it to <body> so the canvas
+   transform can neither scale it nor clip it, which puts it outside
+   .pipe-view — and outside @layer views, which loses to the tooltip
+   primitive's own layer. Adding to `overlays` (declared in index.css) keeps
+   these next to the view they belong to while still outranking the base
+   .ui-tooltip-bubble rules by specificity.
+   ========================================================================== */
+
+@layer overlays {
+  .ui-tooltip-bubble.pipe-info-bubble {
+    display: block;
+    max-width: min(300px, calc(100vw - 32px));
+    padding: 8px 10px;
+    font-family: var(--font-sans);
+    font-size: 0.786rem;
+    font-weight: 400;
+    line-height: 1.5;
+    white-space: normal;
+    text-wrap: pretty;
+    color: var(--text-secondary);
+  }
+
+  .pipe-info-bubble .ui-tooltip-text {
+    display: block;
+  }
+
+  /* First line says what the control is; anything after it is context. */
+  .pipe-info-bubble .pipe-info-line {
+    display: block;
+  }
+
+  .pipe-info-bubble .pipe-info-line + .pipe-info-line {
+    margin-top: 6px;
+    color: var(--text-muted);
   }
 }

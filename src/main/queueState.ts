@@ -56,6 +56,40 @@ export function isModelLoaded(modelId: string): boolean {
   return state.loadedModelId === modelId || state.loadingModelId === modelId;
 }
 
+/**
+ * Move a queued job to another slot in the queue. Only queued jobs move, and
+ * only past other queued jobs: pump() takes the first `queued` entry in array
+ * order, so running and finished jobs keep the positions they already hold.
+ * Returns false when the move is impossible or a no-op.
+ */
+export function reorderQueue(jobId: string, toIndex: number): boolean {
+  const job = findJob(jobId);
+  if (!job || job.status !== 'queued') return false;
+  const queued = state.jobs.filter((j) => j.status === 'queued');
+  const from = queued.indexOf(job);
+  const to = Math.max(0, Math.min(queued.length - 1, Math.round(toIndex)));
+  if (from < 0 || from === to) return false;
+  queued.splice(from, 1);
+  queued.splice(to, 0, job);
+  let next = 0;
+  state.jobs = state.jobs.map((j) => (j.status === 'queued' ? queued[next++]! : j));
+  broadcast(true);
+  return true;
+}
+
+/**
+ * Drop one finished job from the snapshot. Refuses while the job is still
+ * queued or running — cancel it first, which is what the queue's stop control
+ * does before it offers to dismiss.
+ */
+export function dismissJob(jobId: string): boolean {
+  const job = findJob(jobId);
+  if (!job || !isFinished(job)) return false;
+  state.jobs = state.jobs.filter((j) => j !== job);
+  broadcast(true);
+  return true;
+}
+
 /** Drop the oldest finished jobs so the snapshot stays small. */
 export function trimJobs(): void {
   const finished = state.jobs.filter(isFinished);

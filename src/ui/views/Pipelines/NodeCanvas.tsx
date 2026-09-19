@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { Pipeline, PortType } from '../../../core/pipeline';
+import type { Pipeline, PipelineEdge, PortType } from '../../../core/pipeline';
 import { NODE_DEFINITIONS, newId } from '../../../core/pipeline';
+import { toast } from '../../components';
 import { clamp, portPosition, type Point, type Viewport } from './canvasGeometry';
 import { gridStyle, type CanvasViewport } from './useCanvasViewport';
 import { NodeCard } from './NodeCard';
@@ -26,6 +27,28 @@ const isEditable = (t: EventTarget | null) =>
   t instanceof HTMLElement && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
 
 /**
+ * Would wiring `from → to` close a loop? The graph is a DAG by construction;
+ * `validatePipeline` only walks backwards, so a cycle there reads as "Mesh
+ * Export is not connected to the Mesh Generator" rather than as the loop it
+ * is. Cheaper and clearer to refuse the wire.
+ */
+function createsCycle(edges: PipelineEdge[], from: string, to: string): boolean {
+  if (from === to) return true;
+  const seen = new Set<string>([to]);
+  const stack = [to];
+  while (stack.length) {
+    const id = stack.pop()!;
+    for (const e of edges) {
+      if (e.from.node !== id || seen.has(e.to.node)) continue;
+      if (e.to.node === from) return true;
+      seen.add(e.to.node);
+      stack.push(e.to.node);
+    }
+  }
+  return false;
+}
+
+/**
  * The pan/zoom surface. Nodes and the edge SVG live in one transformed
  * `.pipe-world`; live drags update local state (rAF-batched by the cards)
  * and only commit to the pipeline on release so the debounced save fires once.
@@ -36,6 +59,8 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({ pipeline, onChange, vp }
   const [pending, setPending] = useState<PendingState | null>(null);
   const [spaceHeld, setSpaceHeld] = useState(false);
   const pendingRef = useRef<PendingState | null>(null);
+  /** Tears down an in-flight wire drag's window listeners (also on unmount). */
+  const connectCleanup = useRef<(() => void) | null>(null);
   const pan = useRef<{ startX: number; startY: number; origin: Viewport } | null>(null);
   const pipelineRef = useRef(pipeline);
   pipelineRef.current = pipeline;
@@ -80,18 +105,32 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({ pipeline, onChange, vp }
     if (!(e.button === 1 || spaceHeld || (e.button === 0 && empty))) return;
     if (empty && e.button === 0) setSelection(null);
     pan.current = { startX: e.clientX, startY: e.clientY, origin: vp.viewportRef.current };
-    e.currentTarget.setPointerCapture(e.pointerId);
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      /* pointer already gone; the window-level up still ends the pan */
+    }
     e.currentTarget.classList.add('panning');
   };
   const onSurfacePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     const p = pan.current;
     if (!p) return;
+    // A pointerup we never saw (released outside the window, capture lost)
+    // would otherwise leave the surface panning on plain hover.
+    if (e.buttons === 0) {
+      onSurfacePointerUp(e);
+      return;
+    }
     vp.applyLive({ ...p.origin, x: p.origin.x + e.clientX - p.startX, y: p.origin.y + e.clientY - p.startY });
   };
   const onSurfacePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!pan.current) return;
     pan.current = null;
-    e.currentTarget.releasePointerCapture(e.pointerId);
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      /* already released */
+    }
     e.currentTarget.classList.remove('panning');
     vp.setViewport(vp.viewportRef.current);
   };
@@ -111,6 +150,14 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({ pipeline, onChange, vp }
       setPending(start);
 
       let frame: number | null = null;
+      const teardown = () => {
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', up);
+        window.removeEventListener('pointercancel', up);
+        if (frame !== null) cancelAnimationFrame(frame);
+        frame = null;
+        connectCleanup.current = null;
+      };
       const move = (ev: PointerEvent) => {
         if (frame !== null) return;
         frame = requestAnimationFrame(() => {
@@ -122,17 +169,20 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({ pipeline, onChange, vp }
         });
       };
       const up = (ev: PointerEvent) => {
-        window.removeEventListener('pointermove', move);
-        window.removeEventListener('pointerup', up);
-        if (frame !== null) cancelAnimationFrame(frame);
+        teardown();
         const p = pendingRef.current;
         pendingRef.current = null;
         setPending(null);
+        if (ev.type === 'pointercancel') return;
         const target = document.elementFromPoint(ev.clientX, ev.clientY)?.closest<HTMLElement>('[data-port-dir="in"]');
         if (!p || !target) return;
         const toNode = target.dataset['nodeId'];
         const toPort = target.dataset['portId'];
         if (!toNode || !toPort || toNode === p.nodeId || target.dataset['portType'] !== p.type) return;
+        if (createsCycle(pipelineRef.current.edges, p.nodeId, toNode)) {
+          toast.info('That connection would loop the graph back on itself.');
+          return;
+        }
         onChange((cur) => ({
           ...cur,
           edges: [
@@ -142,11 +192,17 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({ pipeline, onChange, vp }
           ],
         }));
       };
+      connectCleanup.current = teardown;
       window.addEventListener('pointermove', move);
       window.addEventListener('pointerup', up);
+      window.addEventListener('pointercancel', up);
     },
     [vp, onChange]
   );
+
+  // A wire drag in flight when the view goes away would otherwise keep its
+  // window listeners (and setPending) alive past unmount.
+  useEffect(() => () => connectCleanup.current?.(), []);
 
   // ---- node edits ----------------------------------------------------------
   const onDragEnd = useCallback(

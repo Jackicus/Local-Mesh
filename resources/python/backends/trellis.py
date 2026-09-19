@@ -108,7 +108,7 @@ class Backend(BaseBackend):
                 f"pipeline.json is missing from {self.model_dir}; "
                 "re-download the model from the Models view")
 
-        self.log("info", f"loading TRELLIS from {self.model_dir}")
+        self.log("debug", f"TRELLIS weights: {self.model_dir}")
         pipeline = TrellisImageTo3DPipeline.from_pretrained(self.model_dir)
         pipeline.cuda()  # checkpoints are fp16 and stay fp16
         self.pipeline = pipeline

@@ -38,7 +38,7 @@ hard path: it kills the process and marks the job cancelled.
 | `load`     | `model_id`, `model_dir` (HF snapshot dir), `device` (`auto|cuda|cpu`), `precision` (`auto|fp16|fp32`), `low_vram` (bool) |
 | `unload`   | –                                                                                        |
 | `generate` | `job` = GenerationJobSpec (below)                                                        |
-| `process`  | `request_id`, `input` (an existing mesh file), `output` (absolute path incl. extension; unique-ify the stem if taken), `ops` (list of `{"op":"decimate","ratio":0.5}` / `{"op":"smooth","iterations":10}`) — trimesh only, no model needed; emits `progress` with `job_id: request_id`, then `processed` or `error` (with `request_id`) |
+| `process`  | `request_id`, `input` (an existing mesh file), `output` (absolute path incl. extension; unique-ify the stem if taken), `ops` (a non-empty mesh op chain, see below) — trimesh only, no model needed; emits `progress` with `job_id: request_id`, then `processed` or `error` (with `request_id`) |
 | `memory`   | –                                                                                        |
 | `shutdown` | –                                                                                        |
 
@@ -51,7 +51,7 @@ hard path: it kills the process and marks the job cancelled.
   "imagePath": "/home/u/.local-mesh/inputs/job-.../cat.png",
   "removeBackground": true,
   "settings": { "variant": "turbo", "steps": 5, "guidance": 5, "octreeResolution": 256, "numChunks": 8000, "mcLevel": 0, "seed": 1234 },
-  "postProcess": { "removeFloaters": true, "removeDegenerateFaces": true, "maxFaces": null, "smoothNormals": false },
+  "postProcess": [{ "op": "remove-floaters", "threshold": 0.1 }, { "op": "remove-degenerate", "mergeVertices": true }],
   "export": { "format": "glb", "outputDir": "/home/u/.local-mesh/outputs", "baseName": "cat-hunyuan3d-2mini-142233" }
 }
 ```
@@ -60,6 +60,24 @@ hard path: it kills the process and marks the job cancelled.
 `src/core/models.ts`; `seed` is always a resolved non-negative integer. The
 worker writes `<outputDir>/<baseName>.<format>` and must report that path in
 `done.output`. If the file already exists, append `-2`, `-3`, ... to the stem.
+
+### Mesh ops
+
+The same op objects appear in `generate`'s `postProcess` (compiled from the
+pipeline's op nodes, possibly empty) and in `process`'s `ops` (one or more,
+from the Generate view's mesh tools). They run in the order given, and each
+reports `progress` under its own op name as the stage.
+
+| op                  | fields                                                       |
+|---------------------|--------------------------------------------------------------|
+| `remove-floaters`   | `threshold` (0 < t ≤ 1, fraction of the largest component)    |
+| `remove-degenerate` | `mergeVertices` (bool)                                        |
+| `fill-holes`        | –                                                             |
+| `decimate`          | `mode` (`ratio|faces`) plus `ratio` (0 < r < 1) or `maxFaces` |
+| `smooth`            | `iterations` (1..200, Taubin)                                 |
+| `recompute-normals` | –                                                             |
+
+Mirrored in `src/core/generation.ts` (`MeshOp`, `normalizeMeshOp`).
 
 ## Events (stdout, one JSON object per line)
 
@@ -85,7 +103,8 @@ Progress stages, in order, so the UI can label them:
 `load` (model load only), `prepare` (image load + background removal),
 `condition`, `diffusion` (per-step progress inside), `decode` (latents → mesh),
 `postprocess`, `export`. A `process` request has its own short sequence -
-`load`, `decimate`, `smooth`, `export` - tagged with `job_id: request_id`, and
+`load`, then one stage per op in the chain (named by the op), then `export` -
+tagged with `job_id: request_id`, and
 answers with `processed`, `error` (carrying `request_id`), or `cancelled` when a
 `cancel` names that request id. After `done` or `error` the worker frees per-job
 tensors and calls `torch.cuda.empty_cache()`; the model stays loaded.

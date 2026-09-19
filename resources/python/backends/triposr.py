@@ -211,7 +211,7 @@ class Backend(BaseBackend):
         self._allow_local_hub_dirs()
         config_name = self._write_local_config(config)
 
-        self.log("info", f"loading TripoSR from {self.model_dir}")
+        self.log("debug", f"TripoSR weights: {self.model_dir}")
         model = self._tsr_class().from_pretrained(
             self.model_dir, config_name=config_name, weight_name="model.ckpt"
         )
