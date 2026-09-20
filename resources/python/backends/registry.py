@@ -8,9 +8,13 @@ from __future__ import annotations
 import importlib
 
 BACKENDS: dict[str, str] = {
-    # The mini and the 1.1B standard model differ only in their DiT subfolder
-    # names, so they share one module and the standard is a subclass.
-    "hunyuan3d_mini": "backends.hunyuan3d_mini:Backend",
+    # Four Hunyuan3D 2.0 entries, one module: the 0.6B mini and the 1.1B
+    # standard model, each in a distilled "turbo" and an undistilled flavour.
+    # They are the same code path down to the checkpoint, so each is a subclass
+    # that pins one DiT subfolder.
+    "hunyuan3d_mini_turbo": "backends.hunyuan3d_mini:Backend",
+    "hunyuan3d_mini": "backends.hunyuan3d_mini:Hunyuan3DMiniBackend",
+    "hunyuan3d_2_turbo": "backends.hunyuan3d_mini:Hunyuan3D2TurboBackend",
     "hunyuan3d_2": "backends.hunyuan3d_mini:Hunyuan3D2Backend",
     "hunyuan3d_21": "backends.hunyuan3d_21:Backend",
     "step1x3d": "backends.step1x3d:Backend",
@@ -21,7 +25,9 @@ BACKENDS: dict[str, str] = {
 }
 
 MODEL_TO_BACKEND: dict[str, str] = {
+    "hunyuan3d-2mini-turbo": "hunyuan3d_mini_turbo",
     "hunyuan3d-2mini": "hunyuan3d_mini",
+    "hunyuan3d-2-turbo": "hunyuan3d_2_turbo",
     "hunyuan3d-2": "hunyuan3d_2",
     "hunyuan3d-2.1": "hunyuan3d_21",
     "step1x-3d": "step1x3d",

@@ -14,12 +14,15 @@ import {
   WrenchIcon,
 } from '../../assets/icons';
 import { formatBytes } from './formatBytes';
-import type { ActionKind, ModelState } from './modelState';
+import type { ActionKind, ModelAction, ModelState } from './modelState';
 
 export interface ModelHandlers {
-  /** Runs every outstanding leg — engine, weights, packages — as one action. */
-  onInstall: () => void;
-  onCancel: () => void;
+  /** Fetch the weights. Needs nothing installed and contends with nothing. */
+  onGetFiles: () => void;
+  onCancelFiles: () => void;
+  /** The shared engine and this model's own packages, as one press. */
+  onSetUp: () => void;
+  onCancelSetup: () => void;
   onDelete: () => void;
   onLoad: () => void;
   onUnload: () => void;
@@ -27,23 +30,28 @@ export interface ModelHandlers {
   onFixEngine: () => void;
 }
 
-const ACTION_ICON = {
+const ACTION_ICON: Record<ActionKind, React.ReactNode> = {
   install: <DownloadIcon size={14} />,
   retry: <RefreshIcon size={14} />,
   cancel: <CancelIcon size={14} />,
 };
 
-/** The one button that matters on a model: whatever comes next, and nothing else. */
-export const PrimaryAction: React.FC<{
-  state: ModelState;
-  handlers: ModelHandlers;
-  size?: 'sm' | 'md';
-}> = ({ state, handlers, size = 'sm' }) => {
-  const { action } = state;
-  // Main gives a model one run slot and throws for the second claim, so a
-  // second click before the first progress event lands is a guaranteed error
-  // toast. Lock the button optimistically and let the state machine unlock it:
-  // any answer from main changes `action.kind` (Download -> Stop -> Try again).
+/**
+ * One of the two buttons.
+ *
+ * Main gives a model one run slot and throws for the second claim, so a second
+ * click before the first progress event lands is a guaranteed error toast.
+ * Lock the button optimistically and let the state machine unlock it: any
+ * answer from main changes `action.kind` (Get -> Stop -> Try again).
+ */
+const ActionButton: React.FC<{
+  action: ModelAction | null;
+  icon?: React.ReactNode;
+  variant?: 'primary' | 'secondary';
+  size: 'sm' | 'md';
+  onRun: () => void;
+  onCancel: () => void;
+}> = ({ action, icon, variant = 'primary', size, onRun, onCancel }) => {
   const [pending, setPending] = useState<ActionKind | null>(null);
   const kind = action?.kind ?? null;
 
@@ -53,27 +61,61 @@ export const PrimaryAction: React.FC<{
       setPending(null);
       return;
     }
-    // Nothing came back. Unlock rather than stranding the only button there is.
+    // Nothing came back. Unlock rather than stranding the button.
     const timer = setTimeout(() => setPending(null), 8000);
     return () => clearTimeout(timer);
   }, [pending, kind]);
 
   if (!action) return null;
-  const run = action.kind === 'cancel' ? handlers.onCancel : handlers.onInstall;
+  const cancelling = action.kind === 'cancel';
   return (
     <Button
       size={size}
-      className="models-primary"
-      variant={action.kind === 'cancel' ? 'secondary' : 'primary'}
-      icon={ACTION_ICON[action.kind]}
+      variant={cancelling ? 'secondary' : variant}
+      icon={cancelling ? ACTION_ICON.cancel : (icon ?? ACTION_ICON[action.kind])}
       disabled={pending === action.kind}
       onClick={() => {
         setPending(action.kind);
-        run();
+        (cancelling ? onCancel : onRun)();
       }}
     >
       {action.label}
     </Button>
+  );
+};
+
+/**
+ * The two things a model asks for, side by side: the files it is, and the
+ * setup that makes it runnable. They are separate buttons because they are
+ * separate concepts — the download works on a machine with no Python on it at
+ * all, and the setup is shared groundwork that only one model may build at a
+ * time. Either may be absent, which simply means that half is already done.
+ */
+export const InstallActions: React.FC<{
+  state: ModelState;
+  handlers: ModelHandlers;
+  size?: 'sm' | 'md';
+}> = ({ state, handlers, size = 'sm' }) => {
+  if (!state.filesAction && !state.runtimeAction) return null;
+  return (
+    <div className="models-actions">
+      <ActionButton
+        action={state.filesAction}
+        size={size}
+        onRun={handlers.onGetFiles}
+        onCancel={handlers.onCancelFiles}
+      />
+      <ActionButton
+        action={state.runtimeAction}
+        icon={<WrenchIcon size={14} />}
+        // Never two primaries: whichever half is outstanding alone is the next
+        // thing to press, and when both are, the files come first.
+        variant={state.filesAction ? 'secondary' : 'primary'}
+        size={size}
+        onRun={handlers.onSetUp}
+        onCancel={handlers.onCancelSetup}
+      />
+    </div>
   );
 };
 
@@ -121,10 +163,7 @@ export const ModelUtilities: React.FC<{
   loaded: boolean;
   busy: boolean;
   handlers: ModelHandlers;
-  /** Drop the destructive and expert bits — for the promoted card, where the
-      only sensible next move is Install and a red button beside it is a trap. */
-  minimal?: boolean;
-}> = ({ model, install, state, loaded, busy, handlers, minimal = false }) => {
+}> = ({ model, install, state, loaded, busy, handlers }) => {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const hasFiles = (install?.weights ?? 'none') !== 'none';
 
@@ -144,7 +183,7 @@ export const ModelUtilities: React.FC<{
           onClick={() => window.electronAPI?.openPath(install.dir)}
         />
       )}
-      {hasFiles && !state.running && !minimal && (
+      {hasFiles && !state.running && (
         <IconAction
           label={loaded ? 'Unload it before deleting' : `Delete the files (${formatBytes(install?.sizeBytes)})`}
           icon={<TrashIcon size={15} />}
@@ -154,7 +193,6 @@ export const ModelUtilities: React.FC<{
         />
       )}
       {state.ready &&
-        !minimal &&
         (loaded ? (
           <Tooltip content="Frees the graphics memory it is holding">
             <Button size="sm" variant="secondary" icon={<StopIcon size={14} />} disabled={busy} onClick={handlers.onUnload}>

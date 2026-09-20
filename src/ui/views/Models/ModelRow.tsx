@@ -6,7 +6,7 @@ import { blurb, tagLabels } from './copy';
 import { Disclosure } from './Disclosure';
 import { formatBytes } from './formatBytes';
 import { InstallTrack } from './InstallTrack';
-import { BlockedNote, ModelUtilities, PrimaryAction, type ModelHandlers } from './ModelActions';
+import { BlockedNote, InstallActions, ModelUtilities, type ModelHandlers } from './ModelActions';
 import type { ModelState } from './modelState';
 import { TransferLine } from './TransferLine';
 
@@ -22,8 +22,9 @@ interface ModelRowProps {
 /**
  * One model as a line in a list, not a card in a grid: eight tall cards all
  * shouting at the same volume is what made this screen hard to read. The line
- * carries the name, what it is for, what it costs and the one next step;
- * everything else is one click down.
+ * carries the name, what it is for, what it costs and whatever is still
+ * outstanding — the files, the setup, or both; everything else is one click
+ * down.
  */
 export const ModelRow: React.FC<ModelRowProps> = ({ model, install, state, loaded, busy, handlers }) => {
   const [open, setOpen] = useState(false);
@@ -85,11 +86,14 @@ export const ModelRow: React.FC<ModelRowProps> = ({ model, install, state, loade
               {state.status.label}
             </Badge>
           </span>
-          <PrimaryAction state={state} handlers={handlers} />
+          <InstallActions state={state} handlers={handlers} />
         </div>
       </div>
 
-      {state.live && <TransferLine live={state.live} />}
+      {/* Two lines, because both halves can be moving at once and each one
+          belongs under the button that started it. */}
+      {state.filesLive && <TransferLine live={state.filesLive} />}
+      {state.runtimeLive && <TransferLine live={state.runtimeLive} />}
       {state.blocked && !state.running && <BlockedNote reason={state.blocked} onFix={handlers.onFixEngine} />}
 
       {open && (

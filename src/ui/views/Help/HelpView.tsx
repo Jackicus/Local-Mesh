@@ -23,28 +23,36 @@ export const HelpView: React.FC = () => {
         {/* 1. Getting started */}
         <Card
           title="Getting started"
-          subtitle="Three steps to your first mesh"
+          subtitle="Four steps to your first mesh"
           icon={<SparklesIcon size={20} />}
         >
           <ul className="guide-list">
             <li>
               <CheckCircleIcon size={16} className="guide-check" />
               <span>
-                <strong>1. Press Install on the Generate screen</strong> and let it finish. It is a big download,
-                so it can take a while, but you only do it once.
+                <strong>1. Install a model on the Models screen.</strong> It is a big download, so it can take a
+                while, but you only do it once.
               </span>
             </li>
             <li>
               <CheckCircleIcon size={16} className="guide-check" />
               <span>
-                <strong>2. Drag a picture in.</strong> Drop any photo onto the Generate screen.
+                <strong>2. Drag a picture in.</strong> Drop any photo onto the Generate screen and it becomes a
+                job in the queue, named after the picture.
               </span>
             </li>
             <li>
               <CheckCircleIcon size={16} className="guide-check" />
               <span>
-                <strong>3. Press Generate.</strong> The 3D shape appears in the window when it is ready, and you
-                can save it from there.
+                <strong>3. Press Start.</strong> The queue runs top to bottom, and each shape appears in the
+                window as it finishes.
+              </span>
+            </li>
+            <li>
+              <CheckCircleIcon size={16} className="guide-check" />
+              <span>
+                <strong>4. Tidy it up, then save it.</strong> Use the Edit tools on a finished job — you can step
+                back through every change — and save the one you want to keep.
               </span>
             </li>
           </ul>

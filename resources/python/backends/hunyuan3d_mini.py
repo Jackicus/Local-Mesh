@@ -1,11 +1,20 @@
 """Hunyuan3D 2 - shape only (`hy3dgen.shapegen`), never `hy3dgen.texgen`.
 
-Two models share this module: the 0.6B `hunyuan3d-2mini` (`Backend`) and the
-1.1B standard `hunyuan3d-2` (`Hunyuan3D2Backend`). They are the same code path
-down to the checkpoint - identical pipeline class, clone and requirements file -
-so the subclass only swaps the DiT subfolder names. backends/registry.py maps
-each model id to the right class.
+Four models share this module, one class each:
 
+    Backend                -> hunyuan3d-2mini-turbo  (0.6B, distilled, ~5 steps)
+    Hunyuan3DMiniBackend   -> hunyuan3d-2mini        (0.6B, 30-50 steps)
+    Hunyuan3D2TurboBackend -> hunyuan3d-2-turbo      (1.1B, distilled, ~5 steps)
+    Hunyuan3D2Backend      -> hunyuan3d-2            (1.1B, 30-50 steps)
+
+They are the same code path down to the checkpoint - identical pipeline class,
+clone and requirements file - so a subclass only names the one DiT subfolder it
+loads. backends/registry.py maps each model id to the right class.
+
+This used to be two classes reading a `variant` setting, which forced one
+download of *both* checkpoints per family. Each model id now pins its own
+folder, downloads only that folder, and quotes a size and a step count that are
+true of the thing it actually runs.
 
 The repo is cloned to ~/.local-mesh/repos/Hunyuan3D-2 and put on sys.path by
 worker.py, so `import hy3dgen` resolves without a pip install.
@@ -13,8 +22,9 @@ worker.py, so `import hy3dgen` resolves without a pip install.
 How the weights are laid out (verified against the HF tree and
 hy3dgen/shapegen/utils.py::smart_load_model):
 
-* Each DiT subfolder - `hunyuan3d-dit-v2-mini`, `-mini-turbo`, `-mini-fast` -
-  holds a `config.yaml` and a single `model.fp16.safetensors` (~3.8 GB).
+* Each DiT subfolder - `hunyuan3d-dit-v2-mini`, `-mini-turbo`, `-mini-fast` and
+  their `-v2-0` counterparts - holds a `config.yaml` and a single
+  `model.fp16.safetensors` (~3.8 GB for the mini, ~4.93 GB for the 1.1B).
 * That one checkpoint contains the DiT **and** the VAE **and** the DINOv2
   conditioner: `from_single_file` splits the state dict by its top-level key
   prefix and builds the VAE from the `vae:` block of the *DiT's* config.yaml.
@@ -30,24 +40,11 @@ while `dtype` is the compute precision the weights are cast to on load.
 """
 from __future__ import annotations
 
+import fnmatch
 import os
 from typing import Any, Optional
 
 from .base import Backend as BaseBackend, Cancelled, check_cancel
-
-# settings["variant"] (src/core/models.ts) -> DiT subfolder
-SUBFOLDERS = {
-    "turbo": "hunyuan3d-dit-v2-mini-turbo",
-    "standard": "hunyuan3d-dit-v2-mini",
-    "fast": "hunyuan3d-dit-v2-mini-fast",
-}
-# The 1.1B standard model: same repo layout, different folder names.
-SUBFOLDERS_V2_0 = {
-    "turbo": "hunyuan3d-dit-v2-0-turbo",
-    "standard": "hunyuan3d-dit-v2-0",
-    "fast": "hunyuan3d-dit-v2-0-fast",
-}
-DEFAULT_VARIANT = os.environ.get("LOCAL_MESH_HUNYUAN_VARIANT", "turbo")
 
 _PCT_CONDITION = 12.0
 _PCT_DIFFUSION_START = 18.0
@@ -79,11 +76,31 @@ def _subfolder_weight_bytes(model_dir: str, subfolder: str) -> int:
     return best * 2  # fp16 on disk -> fp32 in memory
 
 
+def _sibling_subfolders(model_dir: str, glob: str) -> list[str]:
+    """Checkpoint folders of the same family that are actually on disk."""
+    try:
+        names = sorted(os.listdir(model_dir))
+    except OSError:
+        return []
+    return [
+        name for name in names
+        if fnmatch.fnmatch(name, glob) and os.path.isdir(os.path.join(model_dir, name))
+    ]
+
+
 class Backend(BaseBackend):
-    name = "hunyuan3d_mini"
-    # Overridden by Hunyuan3D2Backend; everything else is shared.
-    subfolders = SUBFOLDERS
+    """hunyuan3d-2mini-turbo - the distilled 0.6B checkpoint."""
+
+    name = "hunyuan3d_mini_turbo"
+    # The one DiT folder this model id is; every subclass names its own.
+    subfolder_name = "hunyuan3d-dit-v2-mini-turbo"
+    # Its siblings in the same repo, for the "you downloaded the other one"
+    # fallback below and for the load-time memory estimate. Only the 1.1B pair
+    # overrides this.
     subfolder_glob = "hunyuan3d-dit-v2-mini*"
+    # What this checkpoint is tuned for, and the registry's `steps` default.
+    # Only there so a job that arrives without settings still runs sensibly.
+    default_steps = 5
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -92,22 +109,34 @@ class Backend(BaseBackend):
 
     @classmethod
     def estimate_fp32_weight_bytes(cls, model_dir: str) -> Optional[int]:
-        sizes = [_subfolder_weight_bytes(model_dir, sub) for sub in cls.subfolders.values()]
+        pinned = _subfolder_weight_bytes(model_dir, cls.subfolder_name)
+        if pinned:
+            return pinned
+        # The pinned folder is missing, so load() will fall back to a sibling;
+        # size the largest one rather than reporting nothing.
+        sizes = [_subfolder_weight_bytes(model_dir, name)
+                 for name in _sibling_subfolders(model_dir, cls.subfolder_glob)]
         largest = max(sizes) if sizes else 0
         return largest or None
 
     # -- loading ----------------------------------------------------------
 
-    def _resolve_subfolder(self, variant: str) -> str:
-        subfolders = self.subfolders
-        wanted = subfolders.get(variant, subfolders[DEFAULT_VARIANT])
+    def _resolve_subfolder(self) -> str:
+        """The pinned checkpoint folder, or the best sibling that is on disk.
+
+        A model installed before turbo and standard became separate entries has
+        both folders under the *other* id's directory, and an interrupted
+        download can leave the wrong one behind. Running the sibling is a much
+        better outcome than refusing to load, so long as the log says plainly
+        that this is not the model that was asked for.
+        """
+        wanted = self.subfolder_name
         if os.path.isdir(os.path.join(self.model_dir, wanted)):
             return wanted
-        for name in subfolders.values():
-            if os.path.isdir(os.path.join(self.model_dir, name)):
-                self.log("warn", f"the {wanted} variant is not downloaded, falling back to {name}; "
-                                 "re-download the model from the Models view to get the one you chose")
-                return name
+        for name in _sibling_subfolders(self.model_dir, self.subfolder_glob):
+            self.log("warn", f"{wanted} is not downloaded, falling back to {name}; "
+                             "re-download the model from the Models view to get the one you chose")
+            return name
         raise FileNotFoundError(
             f"no {self.subfolder_glob} subfolder under {self.model_dir}; "
             "re-download the model from the Models view")
@@ -187,7 +216,7 @@ class Backend(BaseBackend):
             pass
 
     def load(self) -> None:
-        self._build(self._resolve_subfolder(DEFAULT_VARIANT))
+        self._build(self._resolve_subfolder())
 
     def unload(self) -> None:
         self._release()
@@ -197,14 +226,13 @@ class Backend(BaseBackend):
     def generate(self, image, settings: dict, cancel):
         import torch
 
-        variant = str(settings.get("variant", DEFAULT_VARIANT))
-        subfolder = self._resolve_subfolder(variant)
+        subfolder = self._resolve_subfolder()
         if self.pipeline is None or subfolder != self.subfolder:
-            self.progress(9.0, "load", f"Switching to {subfolder}")
+            self.progress(9.0, "load", f"Loading {subfolder}")
             self._build(subfolder)
         check_cancel(cancel)
 
-        steps = max(1, int(settings.get("steps", 5)))
+        steps = max(1, int(settings.get("steps", self.default_steps)))
         guidance = float(settings.get("guidance", 5.0))
         octree_resolution = int(settings.get("octreeResolution", 256))
         num_chunks = int(settings.get("numChunks", 8000))
@@ -250,18 +278,44 @@ class Backend(BaseBackend):
         return mesh
 
 
-class Hunyuan3D2Backend(Backend):
-    """Hunyuan3D 2 standard (1.1B) - `tencent/Hunyuan3D-2`.
+class Hunyuan3DMiniBackend(Backend):
+    """hunyuan3d-2mini - the undistilled 0.6B checkpoint.
 
-    Only the DiT subfolder names differ from the mini: `hunyuan3d-dit-v2-0`,
-    `-0-turbo`, `-0-fast`, each a single ~4.93 GB fp16 checkpoint that again
-    carries the VAE and the DINOv2 conditioner inside it. Same clone
-    (repos/Hunyuan3D-2), same requirements file, same conditioner offload.
+    Same repo and same ~3.8 GB checkpoint shape as the turbo above; it simply
+    was not distilled, so it wants 30-50 steps instead of 5.
     """
 
-    name = "hunyuan3d_2"
-    subfolders = SUBFOLDERS_V2_0
+    name = "hunyuan3d_mini"
+    subfolder_name = "hunyuan3d-dit-v2-mini"
+    default_steps = 30
+
+
+class Hunyuan3D2TurboBackend(Backend):
+    """hunyuan3d-2-turbo - the distilled 1.1B checkpoint, `tencent/Hunyuan3D-2`.
+
+    Only the DiT subfolder names differ from the mini: `hunyuan3d-dit-v2-0*`,
+    each a single ~4.93 GB fp16 checkpoint that again carries the VAE and the
+    DINOv2 conditioner inside it. Same clone (repos/Hunyuan3D-2), same
+    requirements file, same conditioner offload.
+    """
+
+    name = "hunyuan3d_2_turbo"
+    subfolder_name = "hunyuan3d-dit-v2-0-turbo"
     subfolder_glob = "hunyuan3d-dit-v2-0*"
 
 
-__all__ = ["Backend", "Hunyuan3D2Backend", "Cancelled", "SUBFOLDERS", "SUBFOLDERS_V2_0"]
+class Hunyuan3D2Backend(Hunyuan3D2TurboBackend):
+    """hunyuan3d-2 - the undistilled 1.1B checkpoint."""
+
+    name = "hunyuan3d_2"
+    subfolder_name = "hunyuan3d-dit-v2-0"
+    default_steps = 30
+
+
+__all__ = [
+    "Backend",
+    "Hunyuan3DMiniBackend",
+    "Hunyuan3D2TurboBackend",
+    "Hunyuan3D2Backend",
+    "Cancelled",
+]

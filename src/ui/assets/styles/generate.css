@@ -5,13 +5,19 @@
    every control floats above it on a frosted plate. Plates share one recipe
    (translucent --bg-surface, blur, hairline border) so the chrome reads as a
    single instrument laid over the model; the accent is spent only on live
-   things — progress, active toggles, the run button, a handle under the
+   things — progress, a selected job, the Start button, a handle under the
    pointer.
 
-   Three stations, one per corner the model doesn't need:
-     top right     the navigator — where the camera is, and the way home
-     bottom left   the queue — one bar per job, the composer as the last bar
-     bottom right  three plates, each a button that opens one panel
+   Two stations, one per corner the model doesn't need:
+     top right     the navigator — where the camera is, and how it is drawn
+     bottom band   the workspace — the queue on the left, Start and the two
+                   tool plates on the right, across from what they act on
+
+   The queue is the app, so it gets the room. It is split by a labelled rule:
+   finished work on a recessed shelf above, still-to-come below, nearest the
+   eye and nearest Start. A row is dense but one line tall until it has
+   something to say, and its edit chain scrolls sideways inside itself rather
+   than making the row wider than the band.
 
    Spacing runs off a local scale rather than loose numbers; there is no space
    token in variables.css to inherit, so the view declares its own and every
@@ -19,20 +25,15 @@
    ========================================================================== */
 
 @layer views {
-  /* Escape .shell-content's padding so the canvas reaches the window edges;
-     the overlays below keep themselves clear of the titlebar. */
-  .gen-view {
-    position: relative;
-    height: 100vh;
-    min-width: 0;
-    margin: calc(-1 * (var(--topbar-height) + 20px)) -24px -24px;
-    overflow: hidden;
-
+  /* The view's own scale and plate recipe. Declared on the row popovers too,
+     not only on the view: they portal to the body to escape the queue's
+     scroll, which also takes them out of reach of anything inherited. */
+  .gen-view,
+  .gen-rowpop {
     --gen-s1: 4px;
     --gen-s2: 6px;
     --gen-s3: 8px;
     --gen-s4: 12px;
-    --gen-s5: 16px;
     --gen-inset: var(--gen-s4);
 
     --gen-plate-bg: color-mix(in oklab, var(--bg-surface) 92%, transparent);
@@ -41,12 +42,22 @@
        ground in both themes. */
     --gen-inset-bg: color-mix(in oklab, var(--bg-app) 60%, transparent);
 
-    --gen-queue-width: 520px;
+    --gen-queue-width: 620px;
     --gen-panel-w: 236px;
     /* The dial's plate, and the circle the axis handles are laid out on.
        --gen-gizmo-core must match RADIUS * 2 in CameraGizmo.tsx. */
     --gen-gizmo-size: 84px;
     --gen-gizmo-core: 54px;
+  }
+
+  /* Escape .shell-content's padding so the canvas reaches the window edges;
+     the overlays below keep themselves clear of the titlebar. */
+  .gen-view {
+    position: relative;
+    height: 100vh;
+    min-width: 0;
+    margin: calc(-1 * (var(--topbar-height) + 20px)) -24px -24px;
+    overflow: hidden;
   }
 
   .gen-canvas {
@@ -66,13 +77,12 @@
      -------------------------------------------------------------------------- */
   .gen-queue,
   .gen-tool-btn,
+  .gen-start,
   .gen-panel,
   .gen-plate,
   .gen-scene-note,
-  .gen-gizmo,
-  .gen-home,
-  .gen-viewopts-panel,
-  .gen-viewopts-btn {
+  .gen-navigator,
+  .gen-viewopts-panel {
     background-color: var(--gen-plate-bg);
     backdrop-filter: blur(12px);
     border: 1px solid var(--border-subtle);
@@ -82,16 +92,13 @@
   .gen-popover-title,
   .gen-popover-meta,
   .gen-panel-title,
-  .gen-queue-title,
-  .gen-queue-count,
-  .gen-queue-clear,
-  .gen-qbar-detail,
-  .gen-qbar-fact,
+  .gen-band-label,
+  .gen-band-count,
   .gen-plate-stats,
-  .gen-drop-hint,
+  .gen-plate-step,
   .gen-output-meta,
   .gen-switch-hint,
-  .gen-note {
+  .gen-choice-meta {
     font-family: var(--font-mono);
     font-size: 0.688rem;
     font-weight: 600;
@@ -121,12 +128,26 @@
     top: calc(var(--topbar-height) + var(--gen-inset));
     left: var(--gen-inset);
     display: flex;
-    gap: 10px;
+    gap: var(--gen-s4);
     align-items: center;
     padding: 7px var(--gen-s4);
     border-radius: var(--radius-md);
+    max-width: min(420px, calc(100% - var(--gen-gizmo-size) - var(--gen-inset) * 4));
+  }
+
+  .gen-scene-note {
     pointer-events: none;
-    max-width: min(320px, calc(100% - var(--gen-gizmo-size) - var(--gen-inset) * 4));
+  }
+
+  /* The caption is a control: it names the selected job, and pressing it goes
+     to that job's row — the same trip a click on the mesh makes. */
+  .gen-plate {
+    text-align: start;
+    transition: border-color var(--transition-fast), background-color var(--transition-fast);
+  }
+
+  .gen-plate:hover {
+    border-color: var(--accent);
   }
 
   .gen-plate-name {
@@ -135,6 +156,13 @@
     color: var(--text-primary);
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Which revision is on screen, in the accent because it is the one thing
+     here that changes under your hands. */
+  .gen-plate-step {
+    color: var(--accent);
     white-space: nowrap;
   }
 
@@ -185,15 +213,36 @@
   .gen-empty-hint {
     font-size: 0.929rem;
     color: var(--text-muted);
+    max-width: 34ch;
+    text-wrap: pretty;
   }
 
-  /* Fast / Balanced / Detailed, in the panel that says what will run */
-  .gen-quality-row {
-    display: flex;
-    flex-direction: column;
+  /* The one thing on an empty screen that can be pressed, so it is the only
+     thing here that takes a pointer. */
+  .gen-empty-pick {
+    pointer-events: auto;
+    display: inline-flex;
+    align-items: center;
     gap: var(--gen-s2);
+    margin-top: var(--gen-s4);
+    padding: 7px var(--gen-s4);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-strong);
+    background-color: var(--gen-plate-bg);
+    backdrop-filter: blur(12px);
+    font-size: 0.857rem;
+    color: var(--text-secondary);
+    transition: border-color var(--transition-fast), color var(--transition-fast),
+      background-color var(--transition-fast);
   }
 
+  .gen-empty-pick:hover {
+    border-color: var(--accent);
+    color: var(--text-primary);
+    background-color: var(--bg-surface-hover);
+  }
+
+  /* Fast / Balanced / Detailed, at the top of the settings they write into */
   .gen-quality {
     display: flex;
     gap: 2px;
@@ -215,7 +264,7 @@
     transition: background-color var(--transition-fast), color var(--transition-fast);
   }
 
-  .gen-quality-btn:hover {
+  .gen-quality-btn:hover:not(:disabled) {
     color: var(--text-primary);
   }
 
@@ -230,115 +279,59 @@
   }
 
   /* --------------------------------------------------------------------------
-     First run: setup offered in the middle of the empty viewport
-     -------------------------------------------------------------------------- */
-  .gen-setup {
-    position: absolute;
-    inset: 0;
-    display: grid;
-    place-items: center;
-    padding: calc(var(--topbar-height) + 24px) 24px 140px;
-    /* The card takes its own clicks; the viewport keeps the rest. */
-    pointer-events: none;
-    z-index: 2;
-  }
+     Navigator: one plate, not three chips
 
-  .gen-setup-card {
-    pointer-events: auto;
-    width: min(440px, 100%);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: var(--gen-s2);
-    padding: 22px 24px 18px;
-    text-align: center;
-    border-radius: var(--radius-lg);
-    border: 1px solid var(--border-strong);
-    background-color: color-mix(in oklab, var(--bg-app) 88%, transparent);
-    backdrop-filter: blur(12px);
-    box-shadow: var(--shadow-lg);
-  }
-
-  .gen-setup-glyph {
-    display: grid;
-    place-items: center;
-    width: 44px;
-    height: 44px;
-    border-radius: var(--radius-md);
-    color: var(--accent);
-    background-color: color-mix(in oklab, var(--accent) 14%, transparent);
-  }
-
-  .gen-setup-title {
-    font-size: 1.143rem;
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-
-  .gen-setup-lede {
-    font-size: 0.929rem;
-    color: var(--text-secondary);
-    text-wrap: pretty;
-  }
-
-  .gen-setup-blurb {
-    font-size: 0.857rem;
-    color: var(--text-muted);
-    text-wrap: pretty;
-  }
-
-  .gen-setup-progress {
-    width: 100%;
-    text-align: start;
-    margin-block-start: var(--gen-s1);
-  }
-
-  .gen-setup-blocked {
-    display: flex;
-    align-items: center;
-    gap: var(--gen-s2);
-    font-size: 0.857rem;
-    color: var(--warning);
-    text-align: start;
-  }
-
-  .gen-setup-actions {
-    display: flex;
-    align-items: center;
-    gap: var(--gen-s3);
-    margin-block-start: var(--gen-s2);
-  }
-
-  .gen-setup-foot {
-    font-size: 0.786rem;
-    color: var(--text-muted);
-  }
-
-  /* --------------------------------------------------------------------------
-     Navigator: the orientation dial and the way home
+     The dial, the view switches and the way home used to be three separate
+     frosted tiles stacked down the right edge, which read as clutter rather
+     than as an instrument. They are one plate now — dial above, its two tools
+     side by side beneath a hairline — so the corner holds a single object with
+     three parts instead of three objects with nothing in common.
      -------------------------------------------------------------------------- */
   .gen-navigator {
     position: absolute;
     top: calc(var(--topbar-height) + var(--gen-inset));
     right: var(--gen-inset);
     /* Below the HUD band: a tall tool panel opening upward must not be
-       covered by the dial. */
+       covered by the dial. Its own popover is the exception. */
     z-index: 1;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: var(--gen-s3);
+    gap: var(--gen-s2);
+    padding: var(--gen-s2) var(--gen-s2) var(--gen-s1);
+    border-radius: var(--radius-lg);
+  }
+
+  .gen-navigator:has(.gen-viewopts.is-open) {
+    z-index: 3;
+  }
+
+  .gen-navtools {
+    display: flex;
+    align-items: center;
+    gap: var(--gen-s1);
+    width: 100%;
+    padding-top: var(--gen-s1);
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  .gen-navtools > * {
+    flex: 1;
   }
 
   /* How the scene is drawn, docked with the dial that says where it is seen from */
   .gen-viewopts {
     position: relative;
+    display: flex;
   }
 
+  /* Drops below the cluster rather than out to its left: the caption for
+     whatever is in the viewport runs along that edge, and a panel opening into
+     it would cover the name of the thing the panel is about. */
   .gen-viewopts-panel {
     position: absolute;
-    top: 0;
-    right: calc(100% + var(--gen-s3));
+    top: calc(100% + var(--gen-s3));
+    right: calc(-1 * var(--gen-s2));
     z-index: 4;
     width: var(--gen-panel-w);
     max-width: calc(100vw - var(--gen-inset) * 4);
@@ -416,23 +409,30 @@
     border-style: dashed;
   }
 
-  /* The two square buttons under the dial match each other, not the plates */
-  .gen-home,
-  .gen-viewopts-btn {
-    width: 32px;
-    height: 32px;
-    border-radius: var(--radius-md);
+  /* The two tools share the width of the dial above them, so the cluster is
+     one column wide whatever is in it. Scoped to the row so it beats the
+     shared .gen-tool metrics further down the file. */
+  .gen-navtools .gen-tool {
+    width: 100%;
+    height: 26px;
+    border-radius: var(--radius-sm);
+  }
+
+  .gen-navtools .ui-tooltip-wrapper,
+  .gen-navtools .gen-viewopts {
+    flex: 1;
+    min-width: 0;
   }
 
   /* --------------------------------------------------------------------------
-     Bottom band: the queue on the left, the tool plates on the right
+     Bottom band: the queue on the left, Start and the tool plates on the right
      -------------------------------------------------------------------------- */
   .gen-hud {
     position: absolute;
     left: var(--gen-inset);
     right: var(--gen-inset);
-    /* Bounded at the top as well as the bottom: a long queue with an open
-       drawer must scroll inside the band, not climb over the titlebar. */
+    /* Bounded at the top as well as the bottom: a long queue must scroll
+       inside the band, not climb over the titlebar. */
     top: calc(var(--topbar-height) + var(--gen-inset));
     bottom: calc(var(--gen-inset) + var(--bottomdock-height, 0px));
     z-index: 2;
@@ -448,140 +448,181 @@
   }
 
   /* --------------------------------------------------------------------------
-     The queue: one plate, one bar per job, the composer as the last bar
+     The queue: one plate, two bands, one row per job
      -------------------------------------------------------------------------- */
   .gen-queue {
     position: relative;
+    /* The row adapts to the plate, not to the window: the dock, the band and
+       the tool plates all decide how wide this gets, so a window-width media
+       query would be guessing. */
+    container-type: inline-size;
+    container-name: queue;
     flex: 1 1 var(--gen-queue-width);
-    max-width: min(var(--gen-queue-width), 60%);
+    max-width: min(var(--gen-queue-width), 64%);
     min-width: 0;
     max-height: 100%;
-    overflow-y: auto;
-    overscroll-behavior: contain;
     display: flex;
     flex-direction: column;
     padding: var(--gen-s2);
-    gap: var(--gen-s1);
     border-radius: var(--radius-lg);
   }
 
-  .gen-queue-head {
-    display: flex;
-    align-items: center;
-    gap: var(--gen-s3);
-    padding: var(--gen-s1) var(--gen-s2) var(--gen-s2);
-  }
-
-  .gen-queue-title {
-    color: var(--text-secondary);
-  }
-
-  .gen-queue-count {
-    font-variant-numeric: tabular-nums;
-  }
-
-  .gen-queue-clear {
-    margin-left: auto;
-    display: inline-flex;
-    align-items: center;
-    gap: var(--gen-s1);
-    padding: 2px var(--gen-s2);
-    border-radius: var(--radius-sm);
-    transition: background-color var(--transition-fast), color var(--transition-fast);
-  }
-
-  .gen-queue-clear:hover {
-    background-color: var(--bg-surface-hover);
-    color: var(--text-secondary);
-  }
-
+  /* Two lists, each scrolling on its own, so the band rules and the + stay
+     put however long either band gets. The shelf is capped shorter than the
+     queue: finished work is reference, the queue is the job at hand. */
+  .gen-shelf,
   .gen-queue-list {
     list-style: none;
     display: flex;
     flex-direction: column;
-    gap: var(--gen-s1);
-    max-height: min(38vh, 340px);
+    gap: 2px;
+    min-height: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
   }
 
-  /* The whole list is the drop target while a bar is in hand. */
+  .gen-shelf {
+    flex: 0 1 auto;
+    max-height: min(24vh, 200px);
+  }
+
+  .gen-queue-list {
+    flex: 0 1 auto;
+    max-height: min(34vh, 320px);
+  }
+
+  /* The whole list is the drop target while a row is in hand. */
   .gen-queue-list.is-reordering {
     cursor: grabbing;
     user-select: none;
   }
 
+  .gen-queue-empty {
+    padding: var(--gen-s4) var(--gen-s3) var(--gen-s3);
+    font-size: 0.857rem;
+    line-height: 1.5;
+    color: var(--text-muted);
+    text-wrap: pretty;
+  }
+
   /* --------------------------------------------------------------------------
-     One bar
+     The band rule: the one structural line in the view, and it carries real
+     information — everything above it is finished and everything below it is
+     still to happen. The label sits in a gap in the rule, the way a section
+     mark sits in a rule on a drawing.
      -------------------------------------------------------------------------- */
-  .gen-qbar,
-  .gen-composer {
-    position: relative;
-    border-radius: var(--radius-md);
-    background-color: var(--gen-inset-bg);
-    border: 1px solid var(--border-subtle);
-  }
-
-  .gen-composer {
-    /* The line you act on: a touch brighter than the history above it. */
-    background-color: color-mix(in oklab, var(--bg-app) 32%, transparent);
-    border-color: var(--border-strong);
-  }
-
-  .gen-qbar-row {
-    position: relative;
-    display: grid;
-    grid-template-columns: 16px auto minmax(0, 1fr) auto auto auto auto;
+  .gen-band {
+    display: flex;
     align-items: center;
     gap: var(--gen-s3);
-    min-height: 44px;
-    padding: var(--gen-s2) var(--gen-s3) var(--gen-s2) var(--gen-s4);
+    padding: var(--gen-s3) var(--gen-s2) var(--gen-s2);
+  }
+
+  .gen-band:first-child {
+    padding-top: var(--gen-s1);
+  }
+
+  /* The rule doubles as the gap between the bands, so the one after the shelf
+     needs room above it and none of its own below. */
+  .gen-shelf + .gen-band {
+    padding-top: var(--gen-s4);
+  }
+
+  .gen-band-label {
+    color: var(--text-secondary);
+    white-space: nowrap;
+  }
+
+  .gen-band-rule {
+    flex: 1;
+    height: 1px;
+    background-color: var(--border-subtle);
+  }
+
+  .gen-band-count {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .gen-band-add {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-subtle);
+    color: var(--text-secondary);
+    background-color: var(--gen-inset-bg);
+    transition: background-color var(--transition-fast), border-color var(--transition-fast),
+      color var(--transition-fast);
+  }
+
+  .gen-band-add:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    background-color: var(--accent-subtle);
+  }
+
+  /* --------------------------------------------------------------------------
+     A row, either kind
+     -------------------------------------------------------------------------- */
+  .gen-row,
+  .gen-done {
+    position: relative;
+    border-radius: var(--radius-md);
+    border: 1px solid transparent;
+    background-color: var(--gen-inset-bg);
+    transition: transform var(--transition-base), border-color var(--transition-fast),
+      background-color var(--transition-fast);
+  }
+
+  /* The selected job: the one the viewport is drawing and the Edit plate acts
+     on. Said once, in the accent, on whichever row it is. */
+  .gen-row.is-selected,
+  .gen-done.is-selected {
+    border-color: color-mix(in oklab, var(--accent) 60%, transparent);
+    background-color: var(--accent-subtle);
+  }
+
+  /* Clicking the mesh in the viewport lands here. */
+  .gen-row.is-pinged,
+  .gen-done.is-pinged {
+    animation: gen-ping 0.9s ease-out;
+  }
+
+  @keyframes gen-ping {
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 transparent;
+    }
+    25% {
+      box-shadow: 0 0 0 3px var(--accent-subtle);
+    }
+  }
+
+  .gen-row.is-over {
+    border-color: var(--accent);
+    background-color: var(--accent-subtle);
+  }
+
+  .gen-row-main {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: var(--gen-s2);
+    min-height: 40px;
+    padding: var(--gen-s1) var(--gen-s2) var(--gen-s1) var(--gen-s1);
     border-radius: inherit;
   }
 
-  /* The status rail: the one place a bar's state is colour rather than words. */
-  .gen-qbar-row::before {
-    content: '';
-    position: absolute;
-    left: 0;
-    top: var(--gen-s2);
-    bottom: var(--gen-s2);
-    width: 2px;
-    border-radius: 0 1px 1px 0;
-    background-color: var(--border-strong);
-  }
-
-  .gen-qbar-loading .gen-qbar-row::before,
-  .gen-qbar-running .gen-qbar-row::before {
-    background-color: var(--accent);
-  }
-
-  .gen-qbar-done .gen-qbar-row::before {
-    background-color: var(--success);
-  }
-
-  .gen-qbar-failed .gen-qbar-row::before {
-    background-color: var(--danger);
-  }
-
-  .gen-qbar-cancelled .gen-qbar-row::before {
-    background-color: var(--text-muted);
-  }
-
-  .gen-composer .gen-qbar-row::before {
-    background-color: var(--accent);
-    opacity: 0.55;
-  }
-
-  /* The progress fill is the bar's own ground: a wash to the current percent
-     with the accent drawn along its bottom edge. */
-  .gen-qbar-fill {
+  /* Progress is the row's own ground: a wash to the current percent with the
+     accent drawn along its bottom edge. */
+  .gen-row-fill {
     position: absolute;
     left: 0;
     top: 0;
     bottom: 0;
-    /* Rounded at both ends rather than clipped by the row: the row can't hide
-       its overflow, because the panel below it has to be able to open. */
     border-radius: inherit;
     background-color: var(--accent-subtle);
     box-shadow: inset 0 -2px 0 var(--accent);
@@ -589,64 +630,183 @@
     pointer-events: none;
   }
 
-  .gen-qbar-grip,
-  .gen-qbar-glyph {
+  /* Second line, only when the row has something to say. Mono, to sit with
+     the rest of the view's small type, but sentence case and unspaced: this
+     is a sentence about this job, not another label. Indented to start under
+     the source picker, so the rule of the row is unbroken. */
+  .gen-row-status {
+    padding: 0 var(--gen-s2) var(--gen-s2) 30px;
+    font-family: var(--font-mono);
+    font-size: 0.688rem;
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .gen-row-status.is-blocked .is-warn {
+    color: var(--warning);
+  }
+
+  /* The grip is two hairlines rather than an icon: at this density a glyph
+     reads as another button, and this is a handle. */
+  .gen-grip {
+    flex: none;
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 16px;
-    color: var(--text-muted);
-  }
-
-  .gen-qbar-grip {
-    height: 24px;
+    width: 14px;
+    height: 26px;
     border-radius: var(--radius-sm);
     cursor: grab;
     touch-action: none;
-    transition: color var(--transition-fast), background-color var(--transition-fast);
+    transition: background-color var(--transition-fast);
   }
 
-  .gen-qbar-grip:hover {
-    color: var(--text-primary);
+  .gen-grip > span {
+    width: 6px;
+    height: 12px;
+    border-left: 1px solid var(--border-strong);
+    border-right: 1px solid var(--border-strong);
+  }
+
+  .gen-grip:hover:not(:disabled) {
     background-color: var(--bg-surface-hover);
   }
 
-  .gen-qbar-done .gen-qbar-glyph {
-    color: var(--success);
+  .gen-grip:disabled {
+    cursor: default;
+    opacity: 0;
   }
 
-  .gen-qbar-failed .gen-qbar-glyph {
-    color: var(--danger);
+  .gen-row.is-dragging {
+    z-index: 3;
+    transition: none;
+    box-shadow: var(--gen-plate-shadow);
+    border-color: var(--accent);
+    background-color: var(--bg-surface);
   }
 
-  .gen-qbar-body {
-    min-width: 0;
+  .gen-row.is-dragging .gen-grip {
+    cursor: grabbing;
+    background-color: var(--accent-subtle);
+  }
+
+  /* --------------------------------------------------------------------------
+     Row controls
+     -------------------------------------------------------------------------- */
+  /* What the job runs, and the first decision on the row. */
+  .gen-source {
+    flex: none;
     display: flex;
-    flex-direction: column;
-    gap: 1px;
+    align-items: center;
+    gap: var(--gen-s1);
+    width: 116px;
+    height: 26px;
+    padding: 0 var(--gen-s2);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    background-color: color-mix(in oklab, var(--bg-surface) 55%, transparent);
+    font-family: var(--font-mono);
+    font-size: 0.688rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--text-secondary);
+    transition: background-color var(--transition-fast), border-color var(--transition-fast),
+      color var(--transition-fast);
   }
 
-  .gen-qbar-name {
+  .gen-source:hover:not(:disabled),
+  .gen-source.is-open {
+    border-color: var(--accent);
+    color: var(--accent);
+    background-color: var(--accent-subtle);
+  }
+
+  .gen-source.is-wrong {
+    border-color: color-mix(in oklab, var(--warning) 60%, transparent);
+    color: var(--warning);
+  }
+
+  .gen-source-icon {
+    display: flex;
+    flex: none;
+  }
+
+  .gen-source-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: start;
+  }
+
+  .gen-source-caret {
+    flex: none;
+    opacity: 0.6;
+  }
+
+  .gen-row-thumb {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    transition: border-color var(--transition-fast), color var(--transition-fast);
+  }
+
+  .gen-row-thumb.is-empty {
+    border: 1px dashed var(--border-strong);
+  }
+
+  .gen-row-thumb:hover:not(:disabled) {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  /* The name looks like text until you put the caret in it — it is the job's
+     label first and a field second. */
+  .gen-name {
+    /* Basis deliberately tiny: an input's intrinsic width is ~20 characters,
+       which would otherwise win every shrink and squeeze the chain to nothing. */
+    flex: 1 1 40px;
+    min-width: 40px;
+    height: 26px;
+    padding: 0 var(--gen-s2);
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    background: none;
+    font-family: var(--font-sans);
     font-size: 0.857rem;
     font-weight: 500;
     color: var(--text-primary);
-    overflow: hidden;
     text-overflow: ellipsis;
-    white-space: nowrap;
+    transition: border-color var(--transition-fast), background-color var(--transition-fast);
   }
 
-  .gen-qbar-detail {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  /* An unnamed job is called after its picture; that is a real name, shown as
+     a placeholder only because typing over it replaces it. */
+  .gen-name::placeholder {
+    color: var(--text-secondary);
+    opacity: 1;
   }
 
-  .gen-qbar-detail.is-error,
-  .gen-qbar-detail .is-error {
-    color: var(--danger);
+  .gen-name:hover:not(:disabled) {
+    border-color: var(--border-subtle);
   }
 
-  .gen-qbar-clock {
+  .gen-name:focus {
+    outline: none;
+    border-color: var(--accent);
+    background-color: var(--bg-app);
+  }
+
+  .gen-row-clock {
+    flex: none;
     display: flex;
     align-items: baseline;
     gap: var(--gen-s2);
@@ -657,17 +817,13 @@
     white-space: nowrap;
   }
 
-  /* The composer holds the column but has nothing to put in it; dropping the
-     cell spares the layout a gap it would otherwise keep on both sides. */
-  .gen-qbar-clock:empty {
-    display: none;
-  }
-
-  .gen-qbar-pct {
+  .gen-row-pct {
     color: var(--text-muted);
   }
 
-  .gen-qbar-btn {
+  /* The one icon-button shape every row control shares. */
+  .gen-rowbtn {
+    flex: none;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -679,23 +835,403 @@
       transform var(--transition-fast);
   }
 
-  .gen-qbar-btn:hover {
+  .gen-rowbtn:hover:not(:disabled) {
     background-color: var(--bg-surface-hover);
     color: var(--text-primary);
   }
 
-  .gen-qbar-btn:active {
+  .gen-rowbtn:active:not(:disabled) {
     transform: scale(0.9);
   }
 
-  .gen-qbar-btn.is-active {
-    color: var(--text-primary);
-    background-color: var(--bg-surface-hover);
+  .gen-rowbtn.is-active {
+    color: var(--accent);
+    background-color: var(--accent-subtle);
   }
 
-  .gen-qbar-stop:hover {
+  .gen-row-drop:hover:not(:disabled) {
     background-color: var(--danger-subtle);
     color: var(--danger);
+  }
+
+  .gen-done-save:hover:not(:disabled) {
+    background-color: var(--success-subtle);
+    color: var(--success);
+  }
+
+  /* Nothing on a row that has left the user's hands pretends to be live. */
+  .gen-row :disabled,
+  .gen-row input:disabled {
+    opacity: 0.55;
+    cursor: default;
+  }
+
+  .gen-row .gen-grip:disabled {
+    opacity: 0;
+  }
+
+  /* --------------------------------------------------------------------------
+     The edit chain: the signature of this view.
+
+     An ordered list of edits drawn as a signal chain, because that is what it
+     is — each one takes the mesh the one before it made. It scrolls inside
+     the row so twelve edits and none are the same width from the outside, and
+     the + that grows it stays put at the end rather than scrolling away.
+     -------------------------------------------------------------------------- */
+  .gen-chain {
+    /* Holds its width: the edits are the row's content, and the name beside
+       them is a label that can ellipsize instead. */
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: var(--gen-s1);
+    min-width: 0;
+  }
+
+  .gen-chain-track {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    min-width: 0;
+    max-width: var(--gen-chain-w, 200px);
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .gen-chain-track::-webkit-scrollbar {
+    display: none;
+  }
+
+  .gen-chain-track.is-reordering {
+    cursor: grabbing;
+    user-select: none;
+  }
+
+  .gen-chip {
+    position: relative;
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    height: 22px;
+    padding: 0 var(--gen-s2);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    background-color: color-mix(in oklab, var(--bg-surface) 70%, transparent);
+    font-family: var(--font-mono);
+    font-size: 0.625rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    touch-action: none;
+    transition: border-color var(--transition-fast), color var(--transition-fast),
+      background-color var(--transition-fast);
+  }
+
+  /* The link between one step and the next: the output of one is the input
+     of the next, and the chain says so. */
+  .gen-chip + .gen-chip {
+    margin-left: 7px;
+  }
+
+  .gen-chip + .gen-chip::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: -8px;
+    width: 7px;
+    height: 1px;
+    background-color: var(--border-strong);
+  }
+
+  .gen-chip:hover:not(:disabled),
+  .gen-chip.is-open {
+    border-color: var(--accent);
+    color: var(--accent);
+    background-color: var(--accent-subtle);
+  }
+
+  .gen-chip.is-dragging {
+    border-color: var(--accent);
+    background-color: var(--bg-surface);
+    box-shadow: var(--gen-plate-shadow);
+  }
+
+  .gen-chip-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .gen-chip-icon {
+    display: flex;
+  }
+
+  .gen-chip-icon svg {
+    width: 11px;
+    height: 11px;
+  }
+
+  .gen-chain-add {
+    width: 22px;
+    height: 22px;
+  }
+
+  /* --------------------------------------------------------------------------
+     The finished shelf: the same row, recessed, with different verbs
+     -------------------------------------------------------------------------- */
+  .gen-done {
+    display: flex;
+    align-items: center;
+    gap: var(--gen-s2);
+    min-height: 40px;
+    padding: var(--gen-s1) var(--gen-s2);
+    background-color: color-mix(in oklab, var(--bg-app) 34%, transparent);
+  }
+
+  .gen-done-glyph {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    color: var(--success);
+  }
+
+  .gen-done-glyph.is-fault {
+    color: var(--danger);
+  }
+
+  /* Two chevrons alone would be two mysteries; the readout between them names
+     what the current revision is and where it sits in the chain. */
+  .gen-steps {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 2px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-subtle);
+    background-color: var(--gen-inset-bg);
+  }
+
+  .gen-step {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: calc(var(--radius-sm) - 1px);
+    color: var(--text-muted);
+    transition: background-color var(--transition-fast), color var(--transition-fast);
+  }
+
+  .gen-step:hover:not(:disabled) {
+    background-color: var(--bg-surface-hover);
+    color: var(--text-primary);
+  }
+
+  .gen-step:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+
+  .gen-step-left {
+    transform: rotate(90deg);
+  }
+
+  .gen-step-right {
+    transform: rotate(-90deg);
+  }
+
+  .gen-steps-read {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+    min-width: 72px;
+    padding: 0 var(--gen-s1);
+    line-height: 1.1;
+  }
+
+  .gen-steps-op {
+    font-family: var(--font-mono);
+    font-size: 0.625rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-primary);
+  }
+
+  .gen-steps-count {
+    font-family: var(--font-mono);
+    font-size: 0.625rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-muted);
+  }
+
+  .gen-done-stats {
+    flex: none;
+    font-family: var(--font-mono);
+    font-size: 0.688rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+
+  .gen-done-fault {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 0.786rem;
+    color: var(--danger);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* --------------------------------------------------------------------------
+     Row popovers: portalled, because the queue scrolls and clips
+
+     The one surface in the view that is not frosted. It leaves .gen-view for
+     the document body, and a backdrop-filter on a body-level element sitting
+     over the WebGL canvas paints its background away entirely in Chromium —
+     the panel came out as floating text on the model. It is a dense form over
+     a moving picture, so solid is the better answer anyway.
+     -------------------------------------------------------------------------- */
+  .gen-rowpop {
+    position: fixed;
+    background-color: var(--bg-surface);
+    border: 1px solid var(--border-strong);
+    box-shadow: var(--gen-plate-shadow);
+    z-index: var(--z-tooltip);
+    display: flex;
+    flex-direction: column;
+    gap: var(--gen-s3);
+    max-height: min(60vh, 520px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: var(--gen-s4);
+    border-radius: var(--radius-md);
+    animation: gen-rise var(--transition-base) both;
+  }
+
+  .gen-rowpop .ui-select-wrapper,
+  .gen-rowpop .ui-input-wrapper,
+  .gen-rowpop .ui-slider-wrapper {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .gen-rowpop .ui-segmented-item {
+    min-width: 0;
+    padding: 5px 6px;
+    font-size: 0.786rem;
+  }
+
+  .gen-rowpop .btn-sm {
+    min-width: auto;
+  }
+
+  .gen-choices {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    margin: 0 calc(-1 * var(--gen-s2));
+  }
+
+  .gen-choice {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      'icon name meta'
+      'icon hint hint';
+    align-items: center;
+    column-gap: var(--gen-s3);
+    row-gap: 2px;
+    width: 100%;
+    padding: var(--gen-s2) var(--gen-s3);
+    border-radius: var(--radius-sm);
+    text-align: left;
+    color: var(--text-secondary);
+    transition: background-color var(--transition-fast), color var(--transition-fast);
+  }
+
+  .gen-choice:hover {
+    background-color: var(--bg-surface-hover);
+    color: var(--text-primary);
+  }
+
+  .gen-choice.is-current {
+    background-color: var(--accent-subtle);
+    color: var(--accent);
+  }
+
+  .gen-choice-icon {
+    grid-area: icon;
+    display: flex;
+    align-self: start;
+    margin-top: 2px;
+    color: var(--text-muted);
+  }
+
+  .gen-choice-name {
+    grid-area: name;
+    font-size: 0.857rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .gen-choice-meta {
+    grid-area: meta;
+    white-space: nowrap;
+  }
+
+  /* An op's one-line explanation, under its name and across the full row. */
+  .gen-choice-hint {
+    grid-area: hint;
+    font-size: 0.714rem;
+    line-height: 1.4;
+    color: var(--text-muted);
+    text-wrap: pretty;
+  }
+
+  .gen-popover-foot {
+    padding-top: var(--gen-s2);
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  /* The registry-generated fields borrow the node editor's field shape; only
+     their width metric differs, since this panel is narrower than a node. */
+  .gen-params .pipe-field-label {
+    font-size: 0.786rem;
+  }
+
+  .gen-disclosure {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gen-s3);
+    padding-top: var(--gen-s2);
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  .gen-disclosure-btn {
+    display: flex;
+    align-items: center;
+    gap: var(--gen-s1);
+    font-family: var(--font-mono);
+    font-size: 0.688rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    color: var(--text-muted);
+    transition: color var(--transition-fast);
+  }
+
+  .gen-disclosure-btn:hover {
+    color: var(--text-secondary);
   }
 
   .gen-chevron {
@@ -704,114 +1240,6 @@
 
   .gen-chevron.is-open {
     transform: rotate(180deg);
-  }
-
-  /* Dragging: the carried bar rises off the plate and nothing transitions,
-     since its transform is following the pointer. */
-  .gen-qbar {
-    transition: transform var(--transition-base);
-  }
-
-  .gen-qbar.is-dragging {
-    z-index: 3;
-    transition: none;
-    box-shadow: var(--gen-plate-shadow);
-    border-color: var(--accent);
-    background-color: var(--bg-surface);
-  }
-
-  .gen-qbar.is-dragging .gen-qbar-grip {
-    cursor: grabbing;
-    color: var(--accent);
-  }
-
-  /* --------------------------------------------------------------------------
-     The bar's panel: one drawer, two doors — the expand arrow opens the
-     detail, the tag opens the pipeline chooser.
-     -------------------------------------------------------------------------- */
-  /* An open drawer squares off the bar above it, so the two read as one card. */
-  .gen-qbar.is-expanded > .gen-qbar-row,
-  .gen-composer.is-expanded > .gen-qbar-row {
-    border-radius: var(--radius-md) var(--radius-md) 0 0;
-  }
-
-  .gen-qbar-panel {
-    padding: var(--gen-s4);
-    border-top: 1px solid var(--border-subtle);
-    animation: gen-rise var(--transition-base) both;
-  }
-
-  .gen-qbar-detail-panel {
-    display: flex;
-    gap: var(--gen-s4);
-  }
-
-  .gen-pipepanel {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gen-s3);
-  }
-
-  .gen-qbar-facts {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: var(--gen-s2);
-  }
-
-  .gen-qbar-path {
-    font-family: var(--font-mono);
-    font-size: 0.688rem;
-    color: var(--text-secondary);
-    overflow-wrap: anywhere;
-    line-height: 1.45;
-  }
-
-  .gen-qbar-fault {
-    font-size: 0.786rem;
-    line-height: 1.45;
-    color: var(--danger);
-  }
-
-  .gen-composer-run.btn-sm {
-    min-width: auto;
-    padding: 5px 10px;
-  }
-
-  /* --------------------------------------------------------------------------
-     The pipeline tag
-     -------------------------------------------------------------------------- */
-  .gen-tag {
-    display: flex;
-    align-items: center;
-    gap: var(--gen-s1);
-    max-width: 130px;
-    height: 22px;
-    padding: 0 var(--gen-s2);
-    border: 1px solid var(--border-subtle);
-    border-radius: 999px;
-    background-color: color-mix(in oklab, var(--bg-surface) 55%, transparent);
-    font-family: var(--font-mono);
-    font-size: 0.688rem;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    color: var(--text-secondary);
-    transition: background-color var(--transition-fast), border-color var(--transition-fast),
-      color var(--transition-fast);
-  }
-
-  .gen-tag:hover,
-  .gen-tag.is-open {
-    border-color: var(--accent);
-    color: var(--accent);
-    background-color: var(--accent-subtle);
-  }
-
-  .gen-tag-label {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   /* --------------------------------------------------------------------------
@@ -850,11 +1278,6 @@
     color: var(--text-secondary);
   }
 
-  .gen-popover-value {
-    font-size: 0.857rem;
-    color: var(--text-primary);
-  }
-
   .gen-popover-note,
   .gen-popover-meta {
     display: flex;
@@ -877,20 +1300,17 @@
 
   /* The sm segmented control hard-codes a 64px floor; three of them don't fit
      a panel this narrow, and here the labels are short enough not to need it. */
-  .gen-qbar-panel .ui-segmented-item,
   .gen-panel .ui-segmented-item {
     min-width: 0;
     padding: 5px 6px;
     font-size: 0.786rem;
   }
 
-  .gen-qbar-panel .ui-select-wrapper,
   .gen-panel .ui-select-wrapper {
     width: 100%;
   }
 
-  .gen-panel .btn-sm,
-  .gen-qbar-panel .btn-sm {
+  .gen-panel .btn-sm {
     min-width: auto;
   }
 
@@ -901,7 +1321,7 @@
   }
 
   /* --------------------------------------------------------------------------
-     Tool plates: Camera, Edit, Outputs
+     Start, and the two tool plates
      -------------------------------------------------------------------------- */
   .gen-plates {
     flex: none;
@@ -915,6 +1335,58 @@
   .gen-toolplate {
     position: relative;
     display: flex;
+  }
+
+  /* The one control that sets the line moving, so the one filled button in the
+     view. It sits across the band from the queue it runs, and carries the
+     count so pressing it is never a surprise. */
+  .gen-start {
+    display: flex;
+    align-items: center;
+    gap: var(--gen-s2);
+    height: 34px;
+    padding: 0 var(--gen-s4);
+    border-radius: var(--radius-md);
+    border-color: var(--accent);
+    background-color: var(--accent);
+    color: var(--accent-text);
+    font-family: var(--font-mono);
+    font-size: 0.688rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    transition: background-color var(--transition-fast), transform var(--transition-fast),
+      opacity var(--transition-fast);
+  }
+
+  .gen-start:hover:not(:disabled) {
+    background-color: var(--accent-hover);
+  }
+
+  .gen-start:active:not(:disabled) {
+    transform: scale(0.96);
+  }
+
+  .gen-start:disabled {
+    background-color: var(--gen-plate-bg);
+    border-color: var(--border-subtle);
+    color: var(--text-muted);
+    cursor: not-allowed;
+  }
+
+  .gen-start .gen-spin {
+    color: currentColor;
+  }
+
+  .gen-start-count {
+    display: grid;
+    place-items: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background-color: color-mix(in oklab, var(--accent-text) 24%, transparent);
+    font-variant-numeric: tabular-nums;
   }
 
   .gen-tool-btn {
@@ -1108,13 +1580,35 @@
     padding: var(--gen-s2) var(--gen-s3) var(--gen-s3);
   }
 
-  .gen-edit-foot {
+  /* Which job these act on, named so the plate and the viewport can never be
+     read as two different subjects. */
+  .gen-edit-subject {
     display: flex;
-    align-items: center;
+    align-items: baseline;
     justify-content: space-between;
     gap: var(--gen-s3);
+    font-size: 0.857rem;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .gen-edit-subject-step {
+    flex: none;
+    font-family: var(--font-mono);
+    font-size: 0.688rem;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .gen-edit-foot {
     padding-top: var(--gen-s3);
     border-top: 1px solid var(--border-subtle);
+    font-size: 0.786rem;
+    line-height: 1.45;
+    color: var(--text-muted);
+    text-wrap: pretty;
   }
 
   /* --------------------------------------------------------------------------
@@ -1200,18 +1694,6 @@
     transition: width var(--transition-base);
   }
 
-  .gen-bar-success .gen-bar-fill {
-    background-color: var(--success);
-  }
-
-  .gen-bar-warning .gen-bar-fill {
-    background-color: var(--warning);
-  }
-
-  .gen-bar-danger .gen-bar-fill {
-    background-color: var(--danger);
-  }
-
   .gen-bar.is-indeterminate .gen-bar-fill {
     animation: gen-sweep 1.4s ease-in-out infinite;
   }
@@ -1249,6 +1731,13 @@
     transform: scale(0.92);
   }
 
+  /* The view-options button stays lit while its panel is open, the way the
+     tool plates do. */
+  .gen-tool.is-active {
+    color: var(--accent);
+    background-color: var(--accent-subtle);
+  }
+
   .gen-tool:disabled {
     opacity: 0.4;
     cursor: not-allowed;
@@ -1263,74 +1752,9 @@
     letter-spacing: inherit;
   }
 
-  .gen-meta-row {
-    display: flex;
-    align-items: center;
-    gap: var(--gen-s3);
-    flex-wrap: wrap;
-  }
-
-  .gen-warn {
-    display: flex;
-    gap: var(--gen-s3);
-    padding: var(--gen-s3);
-    border-radius: var(--radius-md);
-    background-color: var(--warning-subtle);
-    color: var(--warning);
-  }
-
-  .gen-warn-body {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: var(--gen-s3);
-    font-size: 0.857rem;
-  }
-
   /* --------------------------------------------------------------------------
-     Image staging
+     Source-image thumbnails
      -------------------------------------------------------------------------- */
-  .gen-images {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gen-s3);
-  }
-
-  .gen-drop {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 2px;
-    padding: var(--gen-s5) var(--gen-s4);
-    border: 1px dashed var(--border-strong);
-    border-radius: var(--radius-md);
-    color: var(--text-muted);
-    background-color: color-mix(in oklab, var(--bg-app) 45%, transparent);
-    transition: border-color var(--transition-fast), background-color var(--transition-fast),
-      color var(--transition-fast);
-  }
-
-  .gen-drop.is-over {
-    border-color: var(--accent);
-    background-color: var(--accent-subtle);
-    color: var(--accent);
-  }
-
-  .gen-drop-title {
-    font-size: 0.857rem;
-    color: var(--text-secondary);
-  }
-
-  .gen-drop.is-over .gen-drop-title {
-    color: var(--accent);
-  }
-
-  .gen-thumb-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(52px, 1fr));
-    gap: var(--gen-s3);
-  }
-
   .gen-thumb {
     position: relative;
     aspect-ratio: 1;
@@ -1364,65 +1788,30 @@
     flex-shrink: 0;
   }
 
-  .gen-thumb-sm {
-    width: 40px;
-    height: 40px;
-    flex-shrink: 0;
-  }
-
-  .gen-thumb-md {
-    width: 64px;
-    height: 64px;
-    flex-shrink: 0;
-  }
-
   .gen-thumb.is-empty {
     border-style: dashed;
     background-color: transparent;
   }
 
-  .gen-thumb-remove {
-    position: absolute;
-    top: 2px;
-    right: 2px;
-    width: 16px;
-    height: 16px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 50%;
-    font-size: 0.786rem;
-    line-height: 1;
-    color: var(--text-primary);
-    background-color: color-mix(in oklab, var(--bg-surface) 80%, transparent);
-    opacity: 0;
-    transition: opacity var(--transition-fast), background-color var(--transition-fast);
-  }
-
-  .gen-thumb:hover .gen-thumb-remove,
-  .gen-thumb-remove:focus-visible {
-    opacity: 1;
-  }
-
-  .gen-thumb-remove:hover {
-    background-color: var(--danger);
-    color: var(--accent-text, #ffffff);
-  }
-
   /* --------------------------------------------------------------------------
      Window-wide drop veil
+
+     Below the HUD rather than over it: while a picture is in the air the queue
+     has to stay readable, because a drop onto a row means "this job's image"
+     and a drop anywhere else means "a new job".
      -------------------------------------------------------------------------- */
   .gen-veil {
     position: absolute;
     inset: var(--gen-inset);
     top: calc(var(--topbar-height) + var(--gen-inset));
-    z-index: 5;
+    z-index: 1;
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: center;
+    padding-top: 22vh;
     border: 1px dashed var(--accent);
     border-radius: var(--radius-lg);
-    background-color: color-mix(in oklab, var(--accent) 12%, transparent);
+    background-color: color-mix(in oklab, var(--accent) 10%, transparent);
     backdrop-filter: blur(2px);
     pointer-events: none;
   }
@@ -1437,31 +1826,96 @@
   }
 
   /* --------------------------------------------------------------------------
-     Narrow windows: the band stacks, the queue takes the full width and the
-     plates sit above it. The tools act on what is on screen, so they stay.
+     A narrow queue plate: the row sheds what is said elsewhere. The clock is
+     on the plate above, the face count is in the caption, and the model's name
+     is one hover away — the chain is not repeated anywhere, so it is the last
+     thing to give up room.
      -------------------------------------------------------------------------- */
-  @media (max-width: 860px) {
+  @container queue (max-width: 620px) {
+    .gen-row,
+    .gen-done {
+      --gen-chain-w: 140px;
+    }
+
+    .gen-source {
+      width: 100px;
+    }
+  }
+
+  @container queue (max-width: 520px) {
+    .gen-row,
+    .gen-done {
+      --gen-chain-w: 96px;
+    }
+
+    /* The glyph already says model-or-pipeline, and warns when it is neither;
+       the caret is the part that can go. */
+    .gen-source {
+      width: 96px;
+    }
+
+    .gen-source-caret {
+      display: none;
+    }
+
+    .gen-row-clock,
+    .gen-done-stats {
+      display: none;
+    }
+
+    .gen-steps-read {
+      min-width: 58px;
+    }
+  }
+
+  /* --------------------------------------------------------------------------
+     Narrow windows: the band stacks, the queue takes the full width and the
+     plates sit above it. They act on what is on screen, so they stay.
+     -------------------------------------------------------------------------- */
+  @media (max-height: 760px) {
+    .gen-shelf {
+      max-height: 120px;
+    }
+
+    .gen-queue-list {
+      max-height: 200px;
+    }
+  }
+
+  @media (max-width: 980px) {
     .gen-view {
       --gen-queue-width: 100%;
     }
 
+    /* Stacked, both cling to the bottom so the model keeps the top of the
+       window, and Start sits directly above the queue it runs. */
     .gen-hud {
       flex-direction: column;
       align-items: stretch;
+      justify-content: flex-end;
       gap: var(--gen-s3);
     }
 
+    /* The basis is a width; in a column it would become a 620px-tall plate. */
     .gen-queue {
       order: 2;
+      flex: 0 0 auto;
       max-width: none;
     }
 
     .gen-plates {
       order: 1;
+      flex: none;
+    }
+
+    .gen-queue-list {
+      max-height: min(30vh, 260px);
     }
   }
 
-  @media (max-width: 560px) {
+  /* Narrower still: the plate buttons drop to their glyphs, which leaves the
+     band to the queue. */
+  @media (max-width: 680px) {
     .gen-tool-btn span {
       display: none;
     }
@@ -1470,8 +1924,8 @@
       padding: 0 var(--gen-s3);
     }
 
-    .gen-qbar-clock {
-      display: none;
+    .gen-start {
+      padding: 0 var(--gen-s3);
     }
   }
 
@@ -1482,12 +1936,20 @@
     }
 
     .gen-panel,
-    .gen-qbar-panel {
+    .gen-rowpop,
+    .gen-viewopts-panel {
       animation: none;
     }
 
-    .gen-qbar {
+    .gen-row,
+    .gen-done {
       transition: none;
+    }
+
+    .gen-row.is-pinged,
+    .gen-done.is-pinged {
+      animation: none;
+      border-color: var(--accent);
     }
   }
 }

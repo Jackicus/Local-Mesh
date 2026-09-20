@@ -1,88 +1,55 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import type { MeshOp, MeshOpKind } from '../../../core/types';
 import { MESH_OP_DEFINITIONS, MESH_OP_KINDS } from '../../../core/types';
-import { Button, Form, toast } from '../../components';
-import {
-  ChevronDownIcon,
-  CleanIcon,
-  FillHolesIcon,
-  FloatersIcon,
-  LoaderIcon,
-  NormalsIcon,
-  ReduceIcon,
-  SmoothIcon,
-  UndoIcon,
-} from '../../assets/icons';
-import { useEnvStore } from '../../stores/envStore';
+import { currentRevision } from '../../../core/generation';
+import { isTerminalStatus, jobTitle } from '../../../core/jobs';
+import { Button } from '../../components';
+import { ChevronDownIcon, LoaderIcon } from '../../assets/icons';
 import { useGenerationStore } from '../../stores/generationStore';
 import { ProgressBar } from './ProgressBar';
+import { MESH_OP_ICONS, MeshOpOptions, defaultOp, hasOptions } from './meshOpUi';
 import { useViewerStore } from './viewerStore';
 import { formatCount, stageLabel } from './format';
 
-const ICONS: Record<MeshOpKind, React.ReactNode> = {
-  'remove-floaters': <FloatersIcon size={14} />,
-  'remove-degenerate': <CleanIcon size={14} />,
-  'fill-holes': <FillHolesIcon size={14} />,
-  decimate: <ReduceIcon size={14} />,
-  smooth: <SmoothIcon size={14} />,
-  'recompute-normals': <NormalsIcon size={14} />,
-};
-
-const THRESHOLDS = [
-  { value: '0.02', label: '2%' },
-  { value: '0.1', label: '10%' },
-  { value: '0.25', label: '25%' },
-];
-
-const RATIOS = [
-  { value: '0.5', label: '50%' },
-  { value: '0.25', label: '25%' },
-  { value: '0.1', label: '10%' },
-];
-
-const ITERATIONS = [
-  { value: '5', label: 'Light' },
-  { value: '15', label: 'Medium' },
-  { value: '40', label: 'Strong' },
-];
+const initialOps = (): Record<MeshOpKind, MeshOp> =>
+  Object.fromEntries(MESH_OP_KINDS.map((kind) => [kind, defaultOp(kind, 'tool')])) as Record<MeshOpKind, MeshOp>;
 
 /**
- * The same mesh ops a pipeline runs after generation, here as a hand tool on
- * the mesh already in view — one list behind the Edit plate. Ops with
- * something to choose expand their settings in place; the rest apply on
- * click. Each run writes a new file next to the old one, so Undo is just the
- * previous path.
+ * The same six edits a job can carry as modifiers, applied one at a time to a
+ * job that has already run.
  *
- * Defaults differ from the pipeline in one place: Reduce works by ratio, since
- * what you want on a mesh you are looking at is "half of this", not a cap.
+ * The plate acts on the *selected job*, not on "whatever is in the viewport".
+ * Those used to be different things — the viewer could be pointed at any file
+ * on disk and the tools would write a sibling next to it — which meant the
+ * edits and the queue kept two separate ideas of what you were working on. A
+ * job owns its mesh and its revisions now, so an edit here is a revision
+ * there, and the row's back and forward are the undo this panel used to have.
+ *
+ * A job that has not run yet is not editable here on purpose: its edits belong
+ * on the row, where they run as part of the job instead of costing a second
+ * pass over the mesh.
  */
-const initialOps = (): Record<MeshOpKind, MeshOp> => {
-  const ops = Object.fromEntries(
-    MESH_OP_KINDS.map((kind) => [kind, MESH_OP_DEFINITIONS[kind].defaults()])
-  ) as Record<MeshOpKind, MeshOp>;
-  ops.decimate = { op: 'decimate', mode: 'ratio', ratio: 0.5, maxFaces: 50000 };
-  return ops;
-};
-
 export const MeshTools: React.FC = () => {
-  const [viewer, viewerActions] = useViewerStore();
+  const [viewer] = useViewerStore();
   const [gen, generation] = useGenerationStore();
-  const [env] = useEnvStore();
   const [open, setOpen] = useState<MeshOpKind | null>(null);
   const [ops, setOps] = useState<Record<MeshOpKind, MeshOp>>(initialOps);
 
-  const outputsDir = env.paths?.outputs ?? null;
-  const loaded = viewer.loaded;
-  const fromOutputs = Boolean(loaded && outputsDir && loaded.path.startsWith(outputsDir));
-  const jobActive = gen.jobs.some((j) => j.status === 'running' || j.status === 'loading');
-  const busy = viewer.toolBusy;
-  const running = busy !== null || gen.processing != null;
+  const job = gen.jobs.find((j) => j.id === viewer.selectedJobId) ?? null;
+  const revision = job ? currentRevision(job) : null;
+  const queueBusy = gen.jobs.some((j) => j.status === 'running' || j.status === 'loading');
+  const processing = gen.processing;
+  const running = processing !== null || job?.editing != null;
 
-  const reason = !fromOutputs
-    ? 'Load a generated mesh first'
-    : jobActive
-      ? 'Wait for the current job'
-      : null;
+  const reason = !job
+    ? 'Pick a finished job to edit it'
+    : !isTerminalStatus(job.status)
+      ? 'This job has not run yet — stack the edit on its row instead'
+      : !revision
+        ? 'This job produced no mesh'
+        : queueBusy
+          ? 'Wait for the queue to finish'
+          : null;
   const blocked = reason !== null || running;
 
   useEffect(() => {
@@ -90,136 +57,46 @@ export const MeshTools: React.FC = () => {
   }, [blocked]);
 
   const patch = useCallback(
-    (kind: MeshOpKind, fields: Record<string, unknown>) =>
-      setOps((prev) => ({ ...prev, [kind]: { ...prev[kind], ...fields } as MeshOp })),
+    (kind: MeshOpKind, op: MeshOp) => setOps((prev) => ({ ...prev, [kind]: op })),
     []
   );
 
   const apply = useCallback(
     async (kind: MeshOpKind) => {
-      const current = viewer.loaded;
-      if (!current || blocked) return;
+      if (!job || blocked) return;
       setOpen(null);
-      viewerActions.setToolBusy(kind);
-      try {
-        const result = await generation.processMesh({ inputPath: current.path, ops: [ops[kind]] });
-        if (!result) return;
-        await viewerActions.applyProcessed(current.path, result.outputPath);
-        toast.success(`${MESH_OP_DEFINITIONS[kind].label} · ${formatCount(result.faces)} faces`);
-      } finally {
-        viewerActions.setToolBusy(null);
-      }
+      await generation.applyEdit(job.id, ops[kind]);
     },
-    [viewer.loaded, blocked, ops, generation, viewerActions]
+    [job, blocked, ops, generation]
   );
 
-  const undo = useCallback(async () => {
-    viewerActions.setToolBusy('undo');
-    try {
-      await viewerActions.undo();
-    } finally {
-      viewerActions.setToolBusy(null);
-    }
-  }, [viewerActions]);
-
-  const faces = loaded?.faces ?? 0;
-  const processing = gen.processing;
-
-  const options = (kind: MeshOpKind): React.ReactNode => {
-    const op = ops[kind];
-    switch (op.op) {
-      case 'remove-floaters':
-        return (
-          <>
-            <span className="gen-popover-title">Keep parts above</span>
-            <Form.Segmented
-              size="sm"
-              fullWidth
-              options={THRESHOLDS}
-              value={String(op.threshold)}
-              onChange={(threshold) => patch(kind, { threshold: Number(threshold) })}
-            />
-            <div className="gen-popover-meta">
-              <span>Of the largest part</span>
-            </div>
-          </>
-        );
-      case 'remove-degenerate':
-        return (
-          <>
-            <span className="gen-popover-title">Degenerate faces</span>
-            <div className="gen-popover-meta">
-              <span>Merge vertices</span>
-              <Form.Toggle
-                size="sm"
-                checked={op.mergeVertices}
-                onChange={(mergeVertices) => patch(kind, { mergeVertices })}
-                aria-label="Merge duplicate vertices"
-              />
-            </div>
-          </>
-        );
-      case 'decimate':
-        return (
-          <>
-            <span className="gen-popover-title">Target faces</span>
-            <Form.Segmented
-              size="sm"
-              fullWidth
-              options={RATIOS}
-              value={String(op.ratio)}
-              onChange={(ratio) => patch(kind, { ratio: Number(ratio) })}
-            />
-            <div className="gen-popover-meta">
-              <span>{formatCount(faces)} now</span>
-              <span>→ {formatCount(Math.round(faces * op.ratio))}</span>
-            </div>
-          </>
-        );
-      case 'smooth':
-        return (
-          <>
-            <span className="gen-popover-title">Smoothing</span>
-            <Form.Segmented
-              size="sm"
-              fullWidth
-              options={ITERATIONS}
-              value={String(op.iterations)}
-              onChange={(iterations) => patch(kind, { iterations: Number(iterations) })}
-            />
-            <div className="gen-popover-meta">
-              <span>Taubin</span>
-              <span>{op.iterations} passes</span>
-            </div>
-          </>
-        );
-      default:
-        return null;
-    }
-  };
+  const faces = revision?.faces ?? 0;
 
   return (
     <div className="gen-edit">
       <header className="gen-panel-head">
-        <span className="gen-panel-title">Edit mesh</span>
-        {loaded && <span className="gen-panel-meta">{formatCount(faces)} faces</span>}
+        <span className="gen-panel-title">Edit</span>
+        {revision && <span className="gen-panel-meta">{formatCount(faces)} faces</span>}
       </header>
+
+      {job && !reason && (
+        <p className="gen-edit-subject">
+          {jobTitle(job.draft)}
+          <span className="gen-edit-subject-step">
+            step {job.cursor + 1} of {job.revisions.length}
+          </span>
+        </p>
+      )}
 
       {reason && <p className="gen-edit-reason">{reason}</p>}
 
-      {(running || processing) && (
+      {running && (
         <div className="gen-edit-progress">
           <div className="gen-edit-progress-line">
             <span className="gen-popover-title">
-              {processing
-                ? stageLabel(processing.stage)
-                : busy === 'undo'
-                  ? 'Stepping back'
-                  : busy
-                    ? stageLabel(busy)
-                    : 'Working'}
+              {processing ? stageLabel(processing.stage) : job?.editing ? stageLabel(job.editing.op) : 'Working'}
             </span>
-            {processing && <span className="gen-qbar-pct">{Math.round(processing.pct)}%</span>}
+            {processing && <span className="gen-row-pct">{Math.round(processing.pct)}%</span>}
           </div>
           <ProgressBar pct={processing?.pct ?? 0} indeterminate={!processing} />
         </div>
@@ -228,7 +105,8 @@ export const MeshTools: React.FC = () => {
       <ul className="gen-edit-ops">
         {MESH_OP_KINDS.map((kind) => {
           const def = MESH_OP_DEFINITIONS[kind];
-          const panel = options(kind);
+          const op = ops[kind];
+          const expandable = hasOptions(op);
           const isOpen = open === kind;
           return (
             <li key={kind} className={`gen-edit-item ${isOpen ? 'is-open' : ''}`}>
@@ -237,19 +115,19 @@ export const MeshTools: React.FC = () => {
                 className="gen-edit-op"
                 disabled={blocked}
                 title={def.description}
-                aria-expanded={panel ? isOpen : undefined}
-                onClick={() => (panel ? setOpen((prev) => (prev === kind ? null : kind)) : void apply(kind))}
+                aria-expanded={expandable ? isOpen : undefined}
+                onClick={() => (expandable ? setOpen((prev) => (prev === kind ? null : kind)) : void apply(kind))}
               >
                 <span className="gen-edit-op-icon">
-                  {busy === kind ? <LoaderIcon size={14} className="gen-spin" /> : ICONS[kind]}
+                  {job?.editing?.op === kind ? <LoaderIcon size={14} className="gen-spin" /> : MESH_OP_ICONS[kind]}
                 </span>
                 <span className="gen-edit-op-label">{def.short}</span>
-                {panel && <ChevronDownIcon size={13} className={`gen-chevron ${isOpen ? 'is-open' : ''}`} />}
+                {expandable && <ChevronDownIcon size={13} className={`gen-chevron ${isOpen ? 'is-open' : ''}`} />}
               </button>
 
-              {panel && isOpen && (
+              {expandable && isOpen && (
                 <div className="gen-edit-options">
-                  {panel}
+                  <MeshOpOptions op={op} faces={faces} onChange={(next) => patch(kind, next)} />
                   <Button variant="primary" size="sm" fullWidth onClick={() => void apply(kind)}>
                     Apply {def.short}
                   </Button>
@@ -260,20 +138,10 @@ export const MeshTools: React.FC = () => {
         })}
       </ul>
 
-      <div className="gen-edit-foot">
-        <span className="gen-popover-title">
-          {viewer.history.length > 0 ? `${viewer.history.length} step${viewer.history.length > 1 ? 's' : ''} back` : 'No changes yet'}
-        </span>
-        <Button
-          variant="subtle"
-          size="sm"
-          icon={busy === 'undo' ? <LoaderIcon size={13} className="gen-spin" /> : <UndoIcon size={13} />}
-          disabled={viewer.history.length === 0 || running || jobActive}
-          onClick={() => void undo()}
-        >
-          Undo
-        </Button>
-      </div>
+      <p className="gen-edit-foot">
+        Every edit adds a step you can walk back on the job&apos;s own row. Nothing is written to disk until you
+        save it.
+      </p>
     </div>
   );
 };

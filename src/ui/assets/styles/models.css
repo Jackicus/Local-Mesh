@@ -1,11 +1,11 @@
 /* ==========================================================================
    models view
 
-   One screen, three surfaces, in the order a first-time user needs them: the
-   engine card (the shared step), one promoted model (the answer to "which do
-   I pick?"), then the rest as a quiet list. The install rail is the only place
-   this view raises its voice — it draws the three-step dependency that used to
-   be implicit, so "which part is missing" is answerable at a glance.
+   One screen, two surfaces: the engine card, which only shows itself when it
+   wants something, and every model as a row in one plain list. Each row
+   carries the two things a model asks for — its files and its setup — as two
+   buttons with a live line each, because they are two separate operations and
+   either can be the one that is missing.
 
    Every detail an expert wants is still here, one disclosure down.
    ========================================================================== */
@@ -99,14 +99,9 @@
     pointer-events: none;
   }
 
-  /* The primary action always sits at the far end of a card footer. */
   .models-view .ui-card-footer {
     flex-wrap: wrap;
     gap: 6px;
-  }
-
-  .models-view .ui-card-footer .models-primary {
-    margin-left: auto;
   }
 
   .models-view .ui-card-footer .models-footer-spacer {
@@ -233,86 +228,6 @@
   }
 
   /* --------------------------------------------------------------------------
-     Featured model — the promoted first pick
-     -------------------------------------------------------------------------- */
-  .models-featured {
-    border-color: oklch(from var(--accent) l c h / 0.35);
-    background-image: linear-gradient(to bottom, var(--accent-subtle), oklch(from var(--accent) l c h / 0) 140px);
-  }
-
-  .models-featured:hover {
-    border-color: oklch(from var(--accent) l c h / 0.5);
-  }
-
-  .models-eyebrow {
-    font-family: var(--font-mono);
-    font-size: 0.679rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.12em;
-    color: var(--accent);
-    margin-bottom: 2px;
-  }
-
-  .models-featured-blurb {
-    font-size: 1rem;
-    line-height: 1.55;
-    color: var(--text-secondary);
-    text-wrap: pretty;
-    max-width: 62ch;
-  }
-
-  /* Hairline-separated cost tiles: what this will actually take from you */
-  .models-facts {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: 1px;
-    background-color: var(--border-subtle);
-    border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-md);
-    overflow: hidden;
-  }
-
-  .models-fact {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-    padding: 10px 12px;
-    background-color: var(--bg-block);
-  }
-
-  .models-fact-label {
-    font-family: var(--font-mono);
-    font-size: 0.679rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.09em;
-    color: var(--text-muted);
-  }
-
-  .models-fact-value {
-    font-size: 0.929rem;
-    font-weight: 500;
-    color: var(--text-primary);
-  }
-
-  .models-fact-value.is-fits {
-    color: var(--success);
-  }
-
-  .models-fact-value.is-tight {
-    color: var(--warning);
-  }
-
-  .models-fact-value.is-over {
-    color: var(--danger);
-  }
-
-  .models-fact-value.is-unknown {
-    color: var(--text-secondary);
-  }
-
-  /* --------------------------------------------------------------------------
      Install rail — the signature: three steps, a spine that fills as you go
      -------------------------------------------------------------------------- */
   .models-track {
@@ -436,33 +351,8 @@
   }
 
   /* --------------------------------------------------------------------------
-     Groups & the model list — one shelf, hairline-separated rows
+     The model list — one shelf, hairline-separated rows
      -------------------------------------------------------------------------- */
-  .models-group {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
-
-  .models-group-title {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    font-family: var(--font-mono);
-    font-size: 0.714rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.09em;
-    color: var(--text-muted);
-  }
-
-  .models-group-title::after {
-    content: '';
-    flex: 1;
-    height: 1px;
-    background-color: var(--border-subtle);
-  }
-
   .models-group-note {
     font-size: 0.857rem;
     line-height: 1.5;
@@ -594,6 +484,16 @@
     gap: 8px;
   }
 
+  /* Files then setup, right-aligned under the status badge. They wrap rather
+     than shrink: a label that says what it costs is the whole point of it. */
+  .models-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 6px;
+  }
+
   /* One-word actions in a list drop the shared button minimum */
   .models-row .btn-sm,
   .models-row-detail .btn-sm {
@@ -603,6 +503,12 @@
   .models-row > .models-transfer,
   .models-row > .models-blocked {
     margin: 0 16px 14px;
+  }
+
+  /* A download and a setup can run at once; the second line is a continuation
+     of the first, not a new block. */
+  .models-row > .models-transfer + .models-transfer {
+    margin-top: -6px;
   }
 
   .models-row-detail {
@@ -894,8 +800,9 @@
       padding-left: 24px;
     }
 
-    .models-facts {
-      grid-template-columns: 1fr;
+    /* Two buttons no longer fit beside the badge; let them take the line. */
+    .models-actions {
+      justify-content: flex-start;
     }
   }
 

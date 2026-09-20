@@ -279,16 +279,61 @@ function legacyOpNodes(data: LegacyPostProcessData, at: { x: number; y: number }
 }
 
 /**
- * Bring a stored pipeline up to the current node vocabulary: the one
- * Post-Process node becomes the chain of individual op nodes it had switched
- * on, spliced into the wires it sat between. Returns the input untouched when
- * there is nothing to do, so callers can test for a change by identity.
+ * Hunyuan3D 2's turbo and standard checkpoints used to be one registry entry
+ * with a `variant` setting choosing between them; they are now separate models,
+ * because bundling them meant downloading both to use either.
+ *
+ * A pipeline saved under the old scheme names the combined id and carries the
+ * variant in its settings. Left alone it would keep the combined id — which now
+ * means *standard* — while holding turbo's step count, so it would quietly run
+ * the undistilled model at five steps and produce a visibly worse mesh than it
+ * did yesterday. Rewrite the id to whichever checkpoint the pipeline was
+ * actually using, and drop the setting that no longer exists.
+ *
+ * `variant` defaulted to turbo, so anything that is not explicitly standard was
+ * running turbo.
+ */
+const SPLIT_VARIANTS: Record<string, { turbo: string; standard: string }> = {
+  'hunyuan3d-2mini': { turbo: 'hunyuan3d-2mini-turbo', standard: 'hunyuan3d-2mini' },
+  'hunyuan3d-2': { turbo: 'hunyuan3d-2-turbo', standard: 'hunyuan3d-2' },
+};
+
+function migrateGeneratorNode(node: PipelineNode): PipelineNode {
+  const data = node.data as Partial<MeshGeneratorData>;
+  const modelId = typeof data.modelId === 'string' ? data.modelId : '';
+  const split = SPLIT_VARIANTS[modelId];
+  const settings = { ...(data.settings ?? {}) };
+  if (!split && !('variant' in settings)) return node;
+
+  const wanted = split ? (settings['variant'] === 'standard' ? split.standard : split.turbo) : modelId;
+  delete settings['variant'];
+  if (wanted === modelId && Object.keys(settings).length === Object.keys(data.settings ?? {}).length) return node;
+  return { ...node, data: { ...node.data, modelId: wanted, settings } };
+}
+
+/**
+ * Bring a stored pipeline up to the current node vocabulary. Two migrations
+ * live here: the one Post-Process node becomes the chain of individual op nodes
+ * it had switched on, spliced into the wires it sat between; and a Mesh
+ * Generator still naming a model that has since been split picks up the id it
+ * meant. Returns the input untouched when there is nothing to do, so callers
+ * can test for a change by identity.
  */
 export function migratePipeline(p: Pipeline): Pipeline {
-  const legacy = p.nodes.filter((n) => (n.type as string) === 'post-process');
-  if (legacy.length === 0) return p;
+  const generators = p.nodes.filter((n) => n.type === 'mesh-generator');
+  const migratedGenerators = new Map(
+    generators.map((node) => [node.id, migrateGeneratorNode(node)] as const)
+  );
+  const generatorChanged = generators.some((node) => migratedGenerators.get(node.id) !== node);
 
-  let nodes = p.nodes;
+  const legacy = p.nodes.filter((n) => (n.type as string) === 'post-process');
+  if (legacy.length === 0) {
+    return generatorChanged
+      ? { ...p, nodes: p.nodes.map((n) => migratedGenerators.get(n.id) ?? n) }
+      : p;
+  }
+
+  let nodes = p.nodes.map((n) => migratedGenerators.get(n.id) ?? n);
   let edges = p.edges;
   for (const node of legacy) {
     const chain = legacyOpNodes(node.data as LegacyPostProcessData, node.position);

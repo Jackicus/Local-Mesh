@@ -5,31 +5,25 @@ import { fileBaseName } from './format';
 
 export interface ThumbnailProps {
   path: string;
-  size?: 'xs' | 'sm' | 'md';
-  onRemove?: () => void;
 }
 
-const FALLBACK_ICON = { xs: 11, sm: 13, md: 16 } as const;
-
-/** The source image, wherever it needs to appear: staging strip or queue bar. */
-export const Thumbnail: React.FC<ThumbnailProps> = ({ path, size = 'md', onRemove }) => {
+/**
+ * The source image on a job row. Small and square by design: it is there to
+ * tell two jobs apart at a glance, not to be looked at — the picture itself is
+ * one click away in whatever the user made it with.
+ */
+export const Thumbnail: React.FC<ThumbnailProps> = ({ path }) => {
   const url = useThumbnail(path);
-  const name = fileBaseName(path);
 
   return (
-    <div className={`gen-thumb gen-thumb-${size}`} title={path}>
+    <span className="gen-thumb gen-thumb-xs" title={path}>
       {url ? (
-        <img src={url} alt={name} />
+        <img src={url} alt="" />
       ) : (
-        <span className="gen-thumb-fallback">
-          <ImageIcon size={FALLBACK_ICON[size]} />
+        <span className="gen-thumb-fallback" role="img" aria-label={fileBaseName(path)}>
+          <ImageIcon size={11} />
         </span>
       )}
-      {onRemove && (
-        <button type="button" className="gen-thumb-remove" aria-label={`Remove ${name}`} onClick={onRemove}>
-          ×
-        </button>
-      )}
-    </div>
+    </span>
   );
 };

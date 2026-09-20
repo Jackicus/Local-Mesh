@@ -1,67 +1,29 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import type { Pipeline } from '../../../core/types';
-import { getModel } from '../../../core/models';
-import { applyQuality, detectQuality, QUALITY_PRESETS, type QualityPreset } from '../../../core/quality';
+import React from 'react';
+import type { ModelDefinition } from '../../../core/models';
+import { applyQuality, detectQuality, QUALITY_PRESETS } from '../../../core/quality';
 import { Tooltip } from '../../components';
-import { pipelineStore, usePipelineStore } from '../../stores/pipelineStore';
+
+export interface QualityPickerProps {
+  model: ModelDefinition;
+  settings: Record<string, number | string | boolean>;
+  onChange: (settings: Record<string, number | string | boolean>) => void;
+  disabled?: boolean;
+}
 
 /**
- * The only dial most people want, on the bar they already use.
+ * The only dial most people want, at the top of the settings the rest of them
+ * live in.
  *
- * Steps, guidance and octree resolution live in the node editor, which is the
- * most advanced screen in the app — so the one question a normal user actually
- * has ("can it be quicker / can it be sharper?") had nowhere to be asked. This
- * writes a preset straight into the selected pipeline's generator node, which
- * means the node editor and this control can never disagree: there is one set
- * of settings and two ways to reach it.
+ * Steps, guidance and octree resolution are the node editor's language, so the
+ * one question a normal user actually has — "can it be quicker, can it be
+ * sharper?" — had nowhere to be asked. A preset is not a mode: it writes real
+ * numbers into the same settings object the fields below it show, so the two
+ * can never disagree and anyone can see exactly what the preset did.
  *
- * A graph edited by hand shows as Custom rather than snapping to the nearest
- * preset — picking one then overwrites it, which is the point of picking one.
+ * Settings nudged by hand read as Custom rather than snapping to the nearest
+ * preset; picking one then overwrites them, which is the point of picking one.
  */
-export const QualityPicker: React.FC = () => {
-  const [pipelines] = usePipelineStore();
-  const [doc, setDoc] = useState<Pipeline | null>(null);
-  const selectedId = pipelines.selectedId;
-
-  useEffect(() => {
-    let live = true;
-    if (!selectedId) {
-      setDoc(null);
-      return;
-    }
-    void pipelineStore.read(selectedId).then((p) => {
-      if (live) setDoc(p);
-    });
-    return () => {
-      live = false;
-    };
-    // The list identity changes whenever a pipeline is saved, which is exactly
-    // when this needs to re-read: a graph edited next door must show up here.
-  }, [selectedId, pipelines.list]);
-
-  const generator = doc?.nodes.find((n) => n.type === 'mesh-generator');
-  const modelId = generator?.data.modelId as string | undefined;
-  const model = modelId ? getModel(modelId) : null;
-  const settings = (generator?.data.settings ?? {}) as Record<string, number | string | boolean>;
-
-  const choose = useCallback(
-    (preset: QualityPreset) => {
-      if (!doc || !generator || !model) return;
-      const next: Pipeline = {
-        ...doc,
-        nodes: doc.nodes.map((n) =>
-          n.id === generator.id
-            ? { ...n, data: { ...n.data, settings: applyQuality(model, preset, settings) } }
-            : n
-        ),
-      };
-      setDoc(next);
-      void pipelineStore.save(next);
-    },
-    [doc, generator, model, settings]
-  );
-
-  if (!model) return null;
+export const QualityPicker: React.FC<QualityPickerProps> = ({ model, settings, onChange, disabled = false }) => {
   const active = detectQuality(model, settings);
 
   return (
@@ -72,7 +34,8 @@ export const QualityPicker: React.FC = () => {
             type="button"
             className={`gen-quality-btn ${active === preset.value ? 'is-active' : ''}`}
             aria-pressed={active === preset.value}
-            onClick={() => choose(preset.value)}
+            disabled={disabled}
+            onClick={() => onChange(applyQuality(model, preset.value, settings))}
           >
             {preset.label}
           </button>

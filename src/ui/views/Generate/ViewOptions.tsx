@@ -10,7 +10,11 @@ import { CameraPanel } from './CameraPanel';
  * both wrong — the camera is the gizmo's business, these draw the scene — and
  * a duplicate signpost pointing at the same idea from two corners of the
  * screen. They belong next to the dial, which leaves the bottom-right to the
- * two plates that are about the mesh itself.
+ * work itself.
+ *
+ * The panel drops below the navigator rather than out to its left: the caption
+ * for whatever is in the viewport sits along that edge, and a panel opening
+ * into it would cover the name of the thing the panel is about.
  */
 export const ViewOptions: React.FC = () => {
   const [open, setOpen] = useState(false);
@@ -33,13 +37,13 @@ export const ViewOptions: React.FC = () => {
   }, [open]);
 
   return (
-    <div className="gen-viewopts" ref={rootRef}>
+    <div className={`gen-viewopts ${open ? 'is-open' : ''}`} ref={rootRef}>
       {open && (
         <div className="gen-viewopts-panel" role="dialog" aria-label="View">
           <CameraPanel />
         </div>
       )}
-      <Tooltip content="How the scene is drawn" position="left" disabled={open}>
+      <Tooltip content="How the scene is drawn" position="bottom" align="end" disabled={open}>
         <button
           type="button"
           className={`gen-tool gen-viewopts-btn ${open ? 'is-active' : ''}`}
@@ -48,7 +52,7 @@ export const ViewOptions: React.FC = () => {
           aria-haspopup="dialog"
           onClick={() => setOpen((v) => !v)}
         >
-          <EyeIcon size={16} />
+          <EyeIcon size={15} />
         </button>
       </Tooltip>
     </div>

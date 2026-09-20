@@ -15,10 +15,14 @@ import type { EnvPhase, ModelDefinition, ModelTag } from '../../../core/types';
 const BLURB: Record<string, string> = {
   triposr:
     'The quick one. Turns an image into a rough shape in seconds, so it is the cheapest way to check a photo works before you spend time on a slower model.',
+  'hunyuan3d-2mini-turbo':
+    'The all-rounder, and the one to pick if you are not sure. Clean, detailed shapes from a modest graphics card, and fast — it gets there in about five passes instead of thirty.',
   'hunyuan3d-2mini':
-    'The all-rounder, and the one to pick if you are not sure. Clean, detailed shapes from a modest graphics card, with a turbo setting that trades a little detail for speed.',
+    'The same model as the turbo, without the shortcut: it takes the long way round for a little more detail. Same download size, same graphics card, several times the wait.',
+  'hunyuan3d-2-turbo':
+    'The full-size version of the mini, and just as quick: smoother surfaces and finer detail for a bit more graphics memory.',
   'hunyuan3d-2':
-    'The full-size version of the mini: smoother surfaces and finer detail, for a bit more graphics memory and a bit more time per mesh.',
+    'The sharpest shapes you can get without a 12 GB card, and the slowest of the four — the full-size model taking the long way round.',
   triposg:
     'Very sharp geometry, but it runs right up to the edge of an 8 GB card. Worth trying once you have the smaller models working.',
   'hunyuan3d-2.1':
@@ -62,11 +66,35 @@ export const PHASE_LABEL: Record<EnvPhase, string> = {
   cancelled: 'Stopped',
 };
 
-/** What each of the three install steps actually is, in one sentence. */
+/**
+ * What each underlying step actually is, in one sentence. The engine and the
+ * extras are one button between them; these two lines are the only place the
+ * seam shows, and they only show it behind a disclosure.
+ */
 export const STEP_HELP = {
   engine: 'The shared groundwork every model runs on, kept inside Local Mesh. Installed once, and nothing is added to the rest of your computer.',
   files: 'The model itself, downloaded straight from Hugging Face.',
   extras: 'A few smaller pieces this particular model needs on top of the shared ones.',
+} as const;
+
+/**
+ * The words on the two buttons.
+ *
+ * They are the whole of the story a beginner gets about installing: one says
+ * what it fetches and what that costs, the other says what it makes ready.
+ * Neither may name a virtual environment, a package, or a step number — if the
+ * label needs one of those to make sense, the label is wrong.
+ */
+export const ACTION_LABEL = {
+  /** The weights. The size is the only cost anyone can act on beforehand. */
+  getFiles: (diskGb: number) => (diskGb > 0 ? `Get the model · ${diskGb} GB` : 'Get the model'),
+  resumeFiles: 'Resume download',
+  /** The shared groundwork plus this model's own bits, as one press. */
+  setUp: 'Set it up',
+  stop: 'Stop',
+  retry: 'Try again',
+  /** Named apart from `retry` for the rare row where both halves failed. */
+  retrySetup: 'Try setup again',
 } as const;
 
 export const UV_INSTALL = 'curl -LsSf https://astral.sh/uv/install.sh | sh';

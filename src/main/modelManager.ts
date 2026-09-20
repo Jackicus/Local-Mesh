@@ -32,7 +32,7 @@ import { log, reported } from './logger';
 import { getConstraintsPath, getPaths, getReposDir, getTorchHubDir } from './paths';
 import { CancelledError, errorMessage, isCancelled, runCapture, spawnLines } from './proc';
 import type { LineProcess } from './proc';
-import { getState, isBusy, isModelLoaded } from './queueState';
+import { getState, isBusy, isModelLoaded, jobModelId } from './jobStore';
 
 /**
  * Two independent actions per model:
@@ -522,7 +522,9 @@ export function killDownloadChildren(): void {
 
 function queuedForModel(modelId: string): boolean {
   return getState().jobs.some(
-    (j) => j.modelId === modelId && (j.status === 'queued' || j.status === 'loading' || j.status === 'running')
+    (j) =>
+      jobModelId(j) === modelId &&
+      (j.status === 'queued' || j.status === 'loading' || j.status === 'running')
   );
 }
 

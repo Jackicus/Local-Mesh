@@ -1,5 +1,5 @@
 {
-  "version": "0.2.0",
+  "version": "0.3.0",
   "python": "3.11",
   "torch": {
     "_comment": "Picked at setup time from the GPU's compute capability (nvidia-smi). Pre-Volta cards (Maxwell/Pascal, cc < 7.0) need the last cu126 build; everything newer, including Blackwell (RTX 50xx, cc 12.x), uses the current PyPI torch which bundles the latest CUDA. No NVIDIA GPU -> CPU wheels.",
@@ -35,7 +35,27 @@
   "baseRequirements": "requirements/base.txt",
   "_models_comment": "Per model: `requirements` (relative to this file), `repos` to clone into ~/.local-mesh/repos, and optional `postInstall` python snippets run by <env>/bin/python after pip succeeds. A repo entry takes `subdir` when its importable package is not at the clone root (the worker puts <repos>/<dir>/<subdir> on sys.path) and `submodules` when the clone needs --recurse-submodules.",
   "models": {
+    "hunyuan3d-2mini-turbo": {
+      "requirements": "requirements/hunyuan3d.txt",
+      "repos": [
+        {
+          "url": "https://github.com/Tencent-Hunyuan/Hunyuan3D-2.git",
+          "dir": "Hunyuan3D-2",
+          "pipInstall": false
+        }
+      ]
+    },
     "hunyuan3d-2mini": {
+      "requirements": "requirements/hunyuan3d.txt",
+      "repos": [
+        {
+          "url": "https://github.com/Tencent-Hunyuan/Hunyuan3D-2.git",
+          "dir": "Hunyuan3D-2",
+          "pipInstall": false
+        }
+      ]
+    },
+    "hunyuan3d-2-turbo": {
       "requirements": "requirements/hunyuan3d.txt",
       "repos": [
         {

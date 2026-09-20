@@ -5,11 +5,10 @@ import { Button, toast } from '../../components';
 import { CheckCircleIcon, FolderOpenIcon, HardDriveIcon } from '../../assets/icons';
 import { dockStore } from '../../stores/dockStore';
 import { useEnvStore } from '../../stores/envStore';
-import { useModelStore } from '../../stores/modelStore';
+import { useModelStore, type InstallChain } from '../../stores/modelStore';
 import { useGenerationStore } from '../../stores/generationStore';
 import { Disclosure } from './Disclosure';
 import { EnvironmentCard } from './EnvironmentCard';
-import { FeaturedModel } from './FeaturedModel';
 import { ModelRow } from './ModelRow';
 import { deriveModelState, type ModelState } from './modelState';
 import type { ModelHandlers } from './ModelActions';
@@ -30,6 +29,26 @@ export const ModelsView: React.FC = () => {
   const [pulse, setPulse] = useState(false);
   /** Set when something sent the user at the engine card, so it opens on arrival. */
   const [engineOpen, setEngineOpen] = useState(false);
+
+  /**
+   * Which model's Set up press is running, and which half of it.
+   *
+   * The engine is shared and only one model may be building it, but the engine
+   * store knows only that *a* setup is running — not who asked. This is that
+   * missing half: it makes the live line appear on the row that was pressed
+   * rather than on all of them, and it is what tells every other row to say
+   * "this one can go next" instead of offering a button that would queue
+   * invisibly. Weights downloads are deliberately not tracked here; they
+   * contend with nothing and may run alongside.
+   */
+  const [setupRun, setSetupRun] = useState<InstallChain | null>(null);
+  // The same value a render ahead of state, so a second click landing before
+  // React has re-rendered still finds the slot taken.
+  const setupRef = useRef<InstallChain | null>(null);
+  const claimSetup = useCallback((next: InstallChain | null) => {
+    setupRef.current = next;
+    setSetupRun(next);
+  }, []);
 
   // Re-probe on every visit: uv may have been installed, or weights changed on
   // disk, since the stores bound at startup.
@@ -61,6 +80,10 @@ export const ModelsView: React.FC = () => {
   const vramTotalBytes = env.status?.vramTotalBytes ?? gen.memory.vramTotalBytes;
   const totalBytes = Object.values(models.installs).reduce((sum, m) => sum + (m.sizeBytes || 0), 0);
 
+  // The store still runs its own chained install for anything that asks for
+  // one; whichever is live owns the engine.
+  const chain = models.chain ?? setupRun;
+
   const states = useMemo(() => {
     const map = new Map<string, ModelState>();
     for (const model of MODELS) {
@@ -74,19 +97,64 @@ export const ModelsView: React.FC = () => {
           envBusy,
           envProgress: env.progress,
           uvMissing,
-          chain: models.chain,
+          chain,
           vramTotalBytes,
         })
       );
     }
     return map;
-  }, [models.installs, models.downloads, models.chain, envReady, envBusy, env.progress, uvMissing, vramTotalBytes]);
+  }, [models.installs, models.downloads, chain, envReady, envBusy, env.progress, uvMissing, vramTotalBytes]);
+
+  /**
+   * Set up = the shared engine, then this model's own packages.
+   *
+   * They are one press because the second cannot happen without the first, and
+   * they are composed here rather than in the store because the store's own
+   * chained install also fetches the weights — which is exactly the lump this
+   * view has just pulled apart. Each leg already reports its own failure, so a
+   * leg that does not land simply stops the run and leaves the row showing
+   * what is still outstanding.
+   */
+  const setUp = useCallback(
+    async (modelId: string) => {
+      if (setupRef.current || models.chain) return;
+      const engineReady = () => envActions.getState().status?.ready ?? false;
+      claimSetup({ modelId, step: 'engine' });
+      try {
+        if (!engineReady()) {
+          await envActions.setup();
+          await envActions.refresh();
+          if (!engineReady()) return;
+        }
+        claimSetup({ modelId, step: 'deps' });
+        await modelActions.installDeps(modelId);
+      } finally {
+        claimSetup(null);
+        await modelActions.refresh();
+      }
+    },
+    [claimSetup, envActions, modelActions, models.chain]
+  );
+
+  /** Stop whichever leg of a Set up run is actually in flight. */
+  const cancelSetup = useCallback(
+    (modelId: string) => {
+      if (setupRef.current?.modelId === modelId && setupRef.current.step === 'engine') {
+        envActions.cancelSetup();
+        return;
+      }
+      void modelActions.cancelInstall(modelId);
+    },
+    [envActions, modelActions]
+  );
 
   const handlerCache = useRef(new Map<string, ModelHandlers>());
   const makeHandlers = useCallback(
     (model: ModelDefinition): ModelHandlers => ({
-      onInstall: () => void modelActions.install(model.id),
-      onCancel: () => void modelActions.cancelInstall(model.id),
+      onGetFiles: () => void modelActions.download(model.id).then(() => modelActions.refresh()),
+      onCancelFiles: () => void modelActions.cancelDownload(model.id),
+      onSetUp: () => void setUp(model.id),
+      onCancelSetup: () => cancelSetup(model.id),
       onDelete: () => {
         void modelActions
           .remove(model.id)
@@ -99,7 +167,7 @@ export const ModelsView: React.FC = () => {
       onUnload: () => void genActions.unloadModel(),
       onFixEngine: focusEngine,
     }),
-    [modelActions, genActions, focusEngine]
+    [modelActions, genActions, setUp, cancelSetup, focusEngine]
   );
 
   // The store actions and focusEngine are stable, so the handler objects can be
@@ -122,24 +190,6 @@ export const ModelsView: React.FC = () => {
   const real = MODELS.filter((m) => !isDemo(m));
   const demo = MODELS.filter(isDemo);
   const readyCount = real.filter((m) => states.get(m.id)?.ready).length;
-
-  // The one to try first. The registry's `recommended` tag wins whenever that
-  // model fits this card, because it is also the model wearing the badge in the
-  // list below — picking anything else here makes the page disagree with
-  // itself. Only when the recommendation will not fit do we fall back to the
-  // smallest thing that will (the registry is ordered by VRAM, ascending).
-  const fits = real.filter((m) => states.get(m.id)?.fit?.verdict !== 'over');
-  const pick =
-    fits.find((m) => states.get(m.id)?.running) ??
-    fits.find((m) => m.tags.includes('recommended')) ??
-    fits.find((m) => (models.installs[m.id]?.weights ?? 'none') !== 'none') ??
-    fits[0] ??
-    real[0];
-  const featured = readyCount === 0 ? pick : undefined;
-
-  const rest = real.filter((m) => m.id !== featured?.id);
-  const installed = rest.filter((m) => states.get(m.id)?.ready);
-  const others = rest.filter((m) => !states.get(m.id)?.ready);
 
   const row = (model: ModelDefinition) => {
     const state = states.get(model.id);
@@ -192,40 +242,10 @@ export const ModelsView: React.FC = () => {
 
       {engineNeedsAttention && engineCard}
 
-      {featured && states.get(featured.id) && (
-        <FeaturedModel
-          model={featured}
-          install={models.installs[featured.id]}
-          state={states.get(featured.id)!}
-          loaded={gen.loadedModelId === featured.id}
-          busy={busy}
-          handlers={handlersFor(featured)}
-        />
-      )}
-
-      {installed.length > 0 && (
-        <section className="models-group">
-          <h2 className="models-group-title">Ready to use</h2>
-          <ul className="models-list">{installed.map(row)}</ul>
-        </section>
-      )}
-
-      {/* Everything that is not the recommendation folds away. Someone choosing
-          their first model should be choosing between one option and "later". */}
-      {others.length > 0 && (
-        <Disclosure
-          summary="Other models"
-          meta={`${others.length}`}
-          className="models-group-hidden"
-          defaultOpen={readyCount > 0 && !featured}
-        >
-          <p className="models-group-note">
-            You do not need these to get started — the one above is enough. They trade download size and graphics
-            memory for sharper shapes, and some will not fit your card.
-          </p>
-          <ul className="models-list">{others.map(row)}</ul>
-        </Disclosure>
-      )}
+      {/* One list, every model, in the registry's own order — which is smallest
+          graphics card first. There are eight of them; a promoted card and two
+          groups were three ways of hiding a list short enough to just read. */}
+      <ul className="models-list">{real.map(row)}</ul>
 
       <Disclosure summary="Advanced" meta="you can ignore all of this" className="models-group-hidden">
         <p className="models-group-note">

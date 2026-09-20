@@ -1,4 +1,5 @@
 import type { DevicePreference, PrecisionPreference } from './env';
+import type { JobDraft, JobRevision, JobStatus } from './jobs';
 
 /**
  * A job as handed to the python worker (see resources/python/PROTOCOL.md).
@@ -244,8 +245,6 @@ export interface GenerationJobSpec {
   };
 }
 
-export type JobStatus = 'queued' | 'loading' | 'running' | 'done' | 'failed' | 'cancelled';
-
 export interface JobProgress {
   /** 0-100 */
   pct: number;
@@ -254,14 +253,24 @@ export interface JobProgress {
   message: string;
 }
 
+/**
+ * One job in the queue. The `draft` is the editable half — source, image, name,
+ * modifiers — and everything else is what has happened to it since. A job stays
+ * in this list after it finishes, holding its revision history, until the user
+ * saves it into outputs/ or deletes it; main persists the whole list, so the
+ * work survives a restart.
+ */
 export interface GenerationJob {
   id: string;
-  pipelineId: string;
-  pipelineName: string;
-  modelId: string;
-  imagePath: string;
-  imageName: string;
-  spec: GenerationJobSpec;
+  draft: JobDraft;
+  /** Compiled from the draft at start time; absent until the job runs. */
+  spec?: GenerationJobSpec;
+  /** The job's own copy of the image, under inputs/<jobId>/. Null until one is attached. */
+  imagePath: string | null;
+  /** Basename of that copy, for the row. */
+  imageName: string | null;
+  /** Where this job's mesh revisions live: cache/<jobId>/. */
+  cacheDir: string;
   status: JobStatus;
   progress: JobProgress;
   createdAt: number;
@@ -269,16 +278,28 @@ export interface GenerationJob {
   /** When the model was ready and generation proper began (after any load). */
   runningAt?: number;
   finishedAt?: number;
-  outputPath?: string;
-  stats?: { vertices: number; faces: number };
+  /**
+   * The mesh and every edit applied to it, oldest first. Empty until the job
+   * produces something.
+   */
+  revisions: JobRevision[];
+  /** Which revision the viewer shows and Save would write out. */
+  cursor: number;
+  /** An edit running on this job's mesh right now, if any. */
+  editing: { op: MeshOpKind; pct: number; message: string } | null;
   error?: string;
+  /** Set when the job has been written into outputs/; the job then leaves the list. */
+  savedPath?: string;
 }
 
-/** What the Generate view sends: one request fans out into one job per image. */
-export interface GenerationJobRequest {
-  pipelineId: string;
-  /** Absolute source paths chosen via dialog or drag-and-drop. */
-  imagePaths: string[];
+/** The revision a job currently points at, or null when it has none. */
+export function currentRevision(job: GenerationJob): JobRevision | null {
+  return job.revisions[job.cursor] ?? null;
+}
+
+/** Convenience for everything that still just wants "the mesh file". */
+export function jobOutputPath(job: GenerationJob): string | null {
+  return currentRevision(job)?.path ?? null;
 }
 
 export type WorkerStatus =
@@ -312,6 +333,8 @@ export interface MeshProcessResult {
 /** Live progress of the one in-flight mesh process request, for the HUD. */
 export interface MeshProcessProgress {
   requestId: string;
+  /** The job whose mesh is being edited, so the row can show it. */
+  jobId: string;
   /** "load" | "export" | a MeshOpKind */
   stage: string;
   /** 0-100 */
@@ -341,12 +364,16 @@ export interface GenerationState {
   device: DevicePreference;
   precision: PrecisionPreference;
   memory: MemoryStats;
-  /** Oldest first; finished jobs stay until clearFinishedJobs(). */
+  /**
+   * Every job, in the order the queue runs them. Drafts, queued work and
+   * finished jobs all live here; a finished job leaves only when it is saved
+   * or deleted.
+   */
   jobs: GenerationJob[];
   activeJobId: string | null;
   /** ms since epoch of the next scheduled idle unload, if any. */
   idleUnloadAt: number | null;
-  /** The in-flight Reduce/Smooth request, if any. Only ever one at a time. */
+  /** The in-flight mesh edit, if any. Only ever one at a time. */
   processing: MeshProcessProgress | null;
 }
 

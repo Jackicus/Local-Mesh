@@ -1,15 +1,22 @@
 import type * as THREE from 'three';
-import type { GenerationJob, MeshOpKind } from '../../../core/types';
+import type { GenerationJob } from '../../../core/types';
+import { currentRevision } from '../../../core/generation';
 import { api, createStore, useStore } from '../../stores/createStore';
 import { toast } from '../../components/Toast/toastStore';
 import { disposeObject, parseMeshBytes } from './meshLoader';
 import { fileBaseName, fileExtension } from './format';
 
 /**
- * View-local state for the Generate screen: what the viewport shows, the
- * viewer toggles, and the images waiting to be queued. Lives in a module (not
- * component state) so navigating away and back keeps the loaded mesh — the
- * three.js object is retained here and re-attached on mount.
+ * View-local state for the Generate screen: which job the viewport is showing,
+ * and how the scene is drawn. Lives in a module (not component state) so
+ * navigating away and back keeps the loaded mesh — the three.js object is
+ * retained here and re-attached on mount.
+ *
+ * The viewer holds no history of its own any more. A job owns its revisions,
+ * main owns the files, and this store owns exactly one question: which job is
+ * selected. Everything the viewport shows follows from that — the mesh, the
+ * caption, and which row the Edit plate acts on — so there is only ever one
+ * answer and no way for the plate and the viewport to disagree.
  */
 export interface LoadedMesh {
   path: string;
@@ -25,17 +32,14 @@ export interface ViewerState {
   showGrid: boolean;
   wireframe: boolean;
   autoRotate: boolean;
-  /** Absolute paths of source images picked or dropped, not yet queued. */
-  images: string[];
+  /** The job the viewport shows and the Edit plate acts on. */
+  selectedJobId: string | null;
   /**
-   * Paths superseded by the mesh tools, oldest first — one step back per entry.
-   * Reset whenever the viewer is pointed at an unrelated mesh.
+   * Bumped whenever the selection is asserted from the viewport — a click on
+   * the mesh. The queue watches it to bring that row into view and flash it,
+   * which is the whole of "clicking the object highlights its job".
    */
-  history: string[];
-  /** Bumped when a tool writes a new file, so the outputs list knows to re-read. */
-  outputsRevision: number;
-  /** Which mesh tool is mid-run; mirrored in the HUD until main reports progress. */
-  toolBusy: MeshOpKind | 'undo' | null;
+  focusTick: number;
 }
 
 /**
@@ -82,10 +86,8 @@ function writePrefs(s: ViewerState) {
 const store = createStore<ViewerState>({
   loaded: null,
   loading: null,
-  images: [],
-  history: [],
-  outputsRevision: 0,
-  toolBusy: null,
+  selectedJobId: null,
+  focusTick: 0,
   ...readPrefs(),
 });
 
@@ -99,8 +101,12 @@ let loadToken = 0;
 let cameraPose: CameraPose = [0, 0, 0, 1];
 const poseListeners = new Set<(pose: CameraPose) => void>();
 
-// Auto-load bookkeeping: jobs already finished when the view first sees the
-// queue are seeded as "seen" so a restart doesn't replay old results.
+// The last queue snapshot, so select() can resolve a job id to a file without
+// every caller having to hand the list back in.
+let latestJobs: readonly GenerationJob[] = [];
+/** The path the selection currently implies; guards against reloading the same file. */
+let shownPath: string | null = null;
+/** Jobs already finished when the view first saw the queue: not fresh results. */
 const seenDone = new Set<string>();
 let primed = false;
 
@@ -114,6 +120,20 @@ function toArrayBuffer(bytes: ArrayBuffer | ArrayBufferView): ArrayBuffer {
     return new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength).slice().buffer;
   }
   return bytes;
+}
+
+function findJob(jobId: string | null): GenerationJob | null {
+  return jobId ? (latestJobs.find((j) => j.id === jobId) ?? null) : null;
+}
+
+/** Show whatever the current selection points at, or nothing. */
+function showSelection() {
+  const job = findJob(store.getState().selectedJobId);
+  const path = job ? (currentRevision(job)?.path ?? null) : null;
+  if (path === shownPath) return;
+  shownPath = path;
+  if (path) void viewerStore.load(path);
+  else viewerStore.clear();
 }
 
 export const viewerStore = {
@@ -132,11 +152,11 @@ export const viewerStore = {
   },
 
   /**
-   * Read a mesh from outputs/ and show it. A newer call supersedes an older
-   * one. `keepHistory` is for the mesh tools, which walk a chain of files that
-   * belong together; any other load starts a fresh chain.
+   * Read a mesh and show it. A newer call supersedes an older one, so a burst
+   * of revision steps settles on the last one asked for rather than whichever
+   * file happened to parse fastest.
    */
-  async load(path: string, options?: { keepHistory?: boolean }): Promise<void> {
+  async load(path: string): Promise<void> {
     const electron = api();
     if (!electron) {
       toast.info('Viewing meshes needs the desktop app');
@@ -159,11 +179,10 @@ export const viewerStore = {
       currentObject = parsed.object;
       controller?.setObject(currentObject);
       if (previous) disposeObject(previous);
-      store.setState((prev) => ({
+      store.setState({
         loaded: { path, name: fileBaseName(path), vertices: parsed.vertices, faces: parsed.faces },
         loading: null,
-        history: options?.keepHistory ? prev.history : [],
-      }));
+      });
     } catch (err) {
       if (token !== loadToken) return;
       store.setState({ loading: null });
@@ -177,36 +196,61 @@ export const viewerStore = {
     currentObject = null;
     controller?.setObject(null);
     if (previous) disposeObject(previous);
-    store.setState({ loaded: null, loading: null, history: [] });
+    store.setState({ loaded: null, loading: null });
+  },
+
+  /** True when the viewport is actually drawing something clickable. */
+  hasObject: () => currentObject !== null,
+
+  /** Point the viewport at a job. The row, the outputs list and the caption all call this. */
+  select(jobId: string | null) {
+    if (store.getState().selectedJobId !== jobId) store.setState({ selectedJobId: jobId });
+    showSelection();
   },
 
   /**
-   * Show the file a tool just wrote and remember what it replaced. Only
-   * records the step if the new file actually loaded.
+   * The mesh in the viewport was clicked. It belongs to the selected job by
+   * construction — the scene is single-object — so this only has to say so
+   * out loud, which the queue turns into "scroll that row into view and flash
+   * it".
    */
-  async applyProcessed(previousPath: string, nextPath: string): Promise<void> {
-    await viewerStore.load(nextPath, { keepHistory: true });
-    if (store.getState().loaded?.path !== nextPath) return;
-    store.setState((prev) => ({
-      history: [...prev.history, previousPath],
-      outputsRevision: prev.outputsRevision + 1,
-    }));
+  pingSelection() {
+    if (!store.getState().selectedJobId) return;
+    store.setState((prev) => ({ focusTick: prev.focusTick + 1 }));
   },
 
-  /** Step back to the file before the last tool run. */
-  async undo(): Promise<void> {
-    const previous = store.getState().history.at(-1);
-    if (!previous) return;
-    await viewerStore.load(previous, { keepHistory: true });
-    if (store.getState().loaded?.path !== previous) return;
-    store.setState((prev) => ({ history: prev.history.slice(0, -1) }));
-  },
+  /**
+   * Reconcile the selection against a fresh queue snapshot. Called from the
+   * view on every push, and responsible for three things a user would
+   * otherwise have to do by hand: keep showing the selected job as its
+   * revisions change, jump to a job the moment it finishes, and fall back to
+   * something sensible when the selected job is saved or deleted.
+   */
+  syncFromJobs(jobs: readonly GenerationJob[]) {
+    latestJobs = jobs;
+    const withMesh = jobs.filter((j) => j.revisions.length > 0);
 
-  setToolBusy: (tool: ViewerState['toolBusy']) => store.setState({ toolBusy: tool }),
+    if (!primed) {
+      // A restart replays every finished job at once; none of them is news.
+      primed = true;
+      jobs.forEach((j) => {
+        if (j.status === 'done') seenDone.add(j.id);
+      });
+      const resume = withMesh.at(-1);
+      if (resume) store.setState({ selectedJobId: resume.id });
+      showSelection();
+      return;
+    }
 
-  /** Drop the viewer's copy if the file behind it goes away. */
-  forget(path: string) {
-    if (store.getState().loaded?.path === path) viewerStore.clear();
+    const fresh = jobs.filter((j) => j.status === 'done' && !seenDone.has(j.id));
+    fresh.forEach((j) => seenDone.add(j.id));
+    // Work you waited for should be the work you are looking at.
+    const newest = fresh.filter((j) => j.revisions.length > 0).at(-1);
+    if (newest) store.setState({ selectedJobId: newest.id });
+    else if (!findJob(store.getState().selectedJobId)) {
+      store.setState({ selectedJobId: withMesh.at(-1)?.id ?? null });
+    }
+    showSelection();
   },
 
   resetCamera: () => controller?.resetCamera(),
@@ -242,27 +286,23 @@ export const viewerStore = {
     controller?.setAutoRotate(on);
   },
 
-  addImages(paths: string[]) {
-    store.setState((prev) => ({ images: [...prev.images, ...paths.filter((p) => !prev.images.includes(p))] }));
+  /**
+   * Show a file that is not a job's — an entry in the outputs list. The
+   * selection is dropped, because the Edit plate must not offer to edit a
+   * saved file as if it were still a job.
+   */
+  async preview(path: string): Promise<void> {
+    store.setState({ selectedJobId: null });
+    shownPath = path;
+    await viewerStore.load(path);
   },
-  removeImage(path: string) {
-    store.setState((prev) => ({ images: prev.images.filter((p) => p !== path) }));
-  },
-  clearImages: () => store.setState({ images: [] }),
 
-  /** Show the newest job that finished since the last call. Call only once hydrated. */
-  autoLoadFrom(jobs: GenerationJob[]) {
-    const done = jobs.filter((j) => j.status === 'done' && j.outputPath);
-    if (!primed) {
-      primed = true;
-      done.forEach((j) => seenDone.add(j.id));
-      return;
+  /** Drop the viewer's copy if the file behind it goes away. */
+  forget(path: string) {
+    if (store.getState().loaded?.path === path) {
+      shownPath = null;
+      viewerStore.clear();
     }
-    const fresh = done.filter((j) => !seenDone.has(j.id));
-    if (fresh.length === 0) return;
-    fresh.forEach((j) => seenDone.add(j.id));
-    const newest = fresh.reduce((a, b) => ((b.finishedAt ?? 0) > (a.finishedAt ?? 0) ? b : a));
-    void viewerStore.load(newest.outputPath!);
   },
 };
 

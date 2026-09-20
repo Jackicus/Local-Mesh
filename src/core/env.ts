@@ -8,7 +8,14 @@ export interface LocalMeshPaths {
   /** The app's bundled resources/python (worker, backends, requirements); never copied. */
   scripts: string;
   models: string; // one subdirectory per model id (HF snapshot)
-  outputs: string; // generated meshes
+  outputs: string; // meshes the user has saved; nothing else writes here
+  /**
+   * One subdirectory per job, holding the generated mesh and every edited
+   * revision of it. A job lives here until the user saves it into outputs/ or
+   * deletes it, so twenty passes of fine-tuning cost one output file, not
+   * twenty.
+   */
+  cache: string;
   inputs: string; // copies of input images (so jobs survive the source moving)
   pipelines: string; // saved node graphs, one JSON per pipeline
   logs: string; // general.log, errors.log, generation.log
@@ -70,6 +77,8 @@ export interface AppSettings {
   lowVram: boolean;
   /** Pipeline used by the Generate view when none has been chosen yet. */
   defaultPipelineId: string | null;
+  /** Model a new job starts on, so the picker is never empty on a fresh row. */
+  defaultModelId: string | null;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -79,4 +88,5 @@ export const DEFAULT_SETTINGS: AppSettings = {
   precision: 'auto',
   lowVram: true,
   defaultPipelineId: null,
+  defaultModelId: null,
 };

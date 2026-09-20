@@ -1,21 +1,22 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { GenerationJob } from '../../../core/types';
-import { EraserIcon } from '../../assets/icons';
+import { isPending, isTerminalStatus, jobTitle } from '../../../core/jobs';
+import { PlusIcon } from '../../assets/icons';
+import { Tooltip } from '../../components';
 import { useGenerationStore } from '../../stores/generationStore';
-import { Composer } from './Composer';
-import type { BarPanel } from './QueueBar';
-import { QueueBar } from './QueueBar';
+import { usePipelineStore } from '../../stores/pipelineStore';
+import { FinishedJob } from './FinishedJob';
+import { JobRow } from './JobRow';
+import { useInstalledModelIds } from './installedModels';
+import { useQueueCounts } from './queueState';
 import { useViewerStore } from './viewerStore';
 
-const FINISHED = new Set(['done', 'failed', 'cancelled']);
 /** How far the pointer travels before a press on the grip becomes a drag. */
 const DRAG_THRESHOLD = 4;
-/** The composer's key in the one-panel-at-a-time bookkeeping. */
-const COMPOSER = 'composer';
 
 interface Slot {
   id: string;
-  /** Viewport y of the bar when the drag started. */
+  /** Viewport y of the row when the drag started. */
   top: number;
 }
 
@@ -31,52 +32,46 @@ interface DragState {
   armed: boolean;
 }
 
-interface OpenPanel {
-  id: string;
-  panel: Exclude<BarPanel, null>;
-}
-
 /**
- * The queue, bottom left: every job as a bar, in the order main will run them,
- * and the composer as the last bar of the same stack — what is about to run,
- * sitting where it will appear.
+ * The queue, bottom left, and the whole workspace: a job is born here, edited
+ * here, run from here and either kept or thrown away here.
  *
- * One panel is open at a time across the whole stack. The bars live in a
- * scrolling list, so a floating popover would be clipped by it; expanding in
- * place keeps the chooser with its bar and the viewport clear.
+ * Two bands, split by what the user can still change. Finished work sits on a
+ * shelf at the top — done with, waiting only to be saved or dropped — and
+ * everything still ahead sits below it, nearest the eye and nearest the Start
+ * control across the band. That is the opposite of a log, which is the point:
+ * the bottom of the list is not the past, it is the next thing to happen.
+ *
+ * The reorder is a pointer drag with window-level listeners rather than
+ * pointer capture, because a capture is tied to a button React is free to
+ * re-render out from under us — which it does, on every progress push. The
+ * threshold keeps a click on the grip from counting as a one-pixel drag, and
+ * Alt with the arrow keys does the same job without a pointer at all.
  */
 export const QueueStack: React.FC = () => {
   const [gen, generation] = useGenerationStore();
-  const [viewer] = useViewerStore();
-  const [open, setOpen] = useState<OpenPanel | null>(null);
+  const [viewer, viewerActions] = useViewerStore();
+  const [pipelines] = usePipelineStore();
+  const installedModelIds = useInstalledModelIds();
+  const counts = useQueueCounts();
   const [drag, setDrag] = useState<DragState | null>(null);
   const [announcement, setAnnouncement] = useState('');
+  const rootRef = useRef<HTMLElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
-  const jobCount = useRef(0);
   const dragRef = useRef<DragState | null>(null);
-  const stagedCount = useRef(viewer.images.length);
+  const jobCount = useRef(0);
 
-  // Main keeps the array in run order; that is the order to show and reorder in.
   const jobs = gen.jobs;
-  const queuedIds = useMemo(() => jobs.filter((j) => j.status === 'queued').map((j) => j.id), [jobs]);
-  const finishedCount = useMemo(() => jobs.filter((j) => FINISHED.has(j.status)).length, [jobs]);
+  // Main keeps the array in run order; that is the order to show and reorder in.
+  const finished = useMemo(() => jobs.filter((j) => isTerminalStatus(j.status)), [jobs]);
+  const working = useMemo(() => jobs.filter((j) => !isTerminalStatus(j.status)), [jobs]);
+  const pendingIds = useMemo(() => jobs.filter((j) => isPending(j.status)).map((j) => j.id), [jobs]);
+  const knownPipelineIds = useMemo(() => new Set(pipelines.list.map((p) => p.id)), [pipelines.list]);
 
   dragRef.current = drag;
 
-  // Staging an image is a statement of intent: show what landed. Running them
-  // empties the composer, so the drawer closes rather than sitting open on an
-  // empty drop zone.
-  useEffect(() => {
-    const previous = stagedCount.current;
-    stagedCount.current = viewer.images.length;
-    if (viewer.images.length > previous) setOpen({ id: COMPOSER, panel: 'detail' });
-    else if (viewer.images.length === 0 && previous > 0) {
-      setOpen((prev) => (prev?.id === COMPOSER && prev.panel === 'detail' ? null : prev));
-    }
-  }, [viewer.images.length]);
-
-  // Work you just started should be on screen: the queue runs top-down, so the
-  // newest job is the last bar in the list.
+  // A job you just added should be on screen; the queue runs top-down, so the
+  // newest one is the last row of the lower band.
   useEffect(() => {
     const previous = jobCount.current;
     jobCount.current = jobs.length;
@@ -85,42 +80,29 @@ export const QueueStack: React.FC = () => {
     if (list) list.scrollTo({ top: list.scrollHeight, behavior: 'smooth' });
   }, [jobs.length]);
 
-  // A job that leaves the queue can't stay open around a stale panel.
+  // Clicking the mesh in the viewport asserts a selection; that has to show up
+  // here, or the connection between the two is invisible.
   useEffect(() => {
-    setOpen((prev) => (prev && prev.id !== COMPOSER && !jobs.some((j) => j.id === prev.id) ? null : prev));
-  }, [jobs]);
-
-  // An opened panel can sit below the fold of a long queue; bring it up.
-  useEffect(() => {
-    if (!open || open.id === COMPOSER) return;
-    listRef.current
-      ?.querySelector(`[data-job="${open.id}"]`)
-      ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-  }, [open]);
-
-  // Escape closes whatever is expanded, the way it closes the tool panels.
-  useEffect(() => {
-    if (!open) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && document.querySelector('.ui-modal-backdrop') === null) setOpen(null);
-    };
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, [open]);
-
-  const panelFor = (id: string): BarPanel => (open?.id === id ? open.panel : null);
-
-  const togglePanel = (id: string) => (panel: Exclude<BarPanel, null>) =>
-    setOpen((prev) => (prev?.id === id && prev.panel === panel ? null : { id, panel }));
+    if (viewer.focusTick === 0 || !viewer.selectedJobId) return;
+    const row = rootRef.current?.querySelector<HTMLElement>(`[data-job="${viewer.selectedJobId}"]`);
+    if (!row) return;
+    row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    row.classList.remove('is-pinged');
+    // Restart the animation rather than waiting out the previous one.
+    void row.offsetWidth;
+    row.classList.add('is-pinged');
+    const timer = setTimeout(() => row.classList.remove('is-pinged'), 900);
+    return () => clearTimeout(timer);
+  }, [viewer.focusTick, viewer.selectedJobId]);
 
   const move = useCallback(
     (job: GenerationJob, from: number, to: number) => {
-      const clamped = Math.max(0, Math.min(queuedIds.length - 1, to));
+      const clamped = Math.max(0, Math.min(pendingIds.length - 1, to));
       if (clamped === from) return;
       void generation.reorder(job.id, clamped);
-      setAnnouncement(`${job.imageName} moved to ${clamped + 1} of ${queuedIds.length} in the queue`);
+      setAnnouncement(`${jobTitle(job.draft)} moved to ${clamped + 1} of ${pendingIds.length} in the queue`);
     },
-    [generation, queuedIds.length]
+    [generation, pendingIds.length]
   );
 
   const endDrag = useCallback(
@@ -134,8 +116,6 @@ export const QueueStack: React.FC = () => {
     [jobs, move]
   );
 
-  // Pointer capture would tie the listeners to a button React can rerender out
-  // from under us, so the window owns them for the length of the drag.
   useEffect(() => {
     if (!drag) return;
     const onMove = (event: PointerEvent) => {
@@ -143,7 +123,7 @@ export const QueueStack: React.FC = () => {
       if (!state || event.pointerId !== state.pointerId) return;
       const dy = event.clientY - state.startY;
       if (!state.armed && Math.abs(dy) <= DRAG_THRESHOLD) return;
-      // The slot the dragged bar now sits nearest, measured where they started.
+      // The slot the dragged row now sits nearest, measured where they started.
       const carried = state.slots[state.from]!.top + dy;
       let to = state.from;
       let best = Infinity;
@@ -176,96 +156,110 @@ export const QueueStack: React.FC = () => {
   }, [drag, endDrag]);
 
   const beginDrag = (job: GenerationJob, event: React.PointerEvent<HTMLButtonElement>) => {
-    if (event.button !== 0 || job.status !== 'queued') return;
+    if (event.button !== 0 || !isPending(job.status)) return;
     const list = listRef.current;
     if (!list) return;
     const slots: Slot[] = [];
-    queuedIds.forEach((id) => {
+    pendingIds.forEach((id) => {
       const el = list.querySelector<HTMLElement>(`[data-job="${id}"]`);
       if (el) slots.push({ id, top: el.getBoundingClientRect().top });
     });
     const from = slots.findIndex((slot) => slot.id === job.id);
     if (from < 0) return;
     event.preventDefault();
-    setOpen(null);
-    setDrag({
-      id: job.id,
-      pointerId: event.pointerId,
-      startY: event.clientY,
-      dy: 0,
-      from,
-      to: from,
-      slots,
-      armed: false,
-    });
+    setDrag({ id: job.id, pointerId: event.pointerId, startY: event.clientY, dy: 0, from, to: from, slots, armed: false });
   };
 
-  const onGripKeyDown =
-    (job: GenerationJob, index: number) => (event: React.KeyboardEvent<HTMLButtonElement>) => {
-      if (!event.altKey || (event.key !== 'ArrowUp' && event.key !== 'ArrowDown')) return;
-      event.preventDefault();
-      move(job, index, index + (event.key === 'ArrowUp' ? -1 : 1));
-    };
+  const onGripKeyDown = (job: GenerationJob, index: number) => (event: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (!event.altKey || (event.key !== 'ArrowUp' && event.key !== 'ArrowDown')) return;
+    event.preventDefault();
+    move(job, index, index + (event.key === 'ArrowUp' ? -1 : 1));
+  };
 
-  /** The drag lifts one bar and opens a gap for it; nothing else moves. */
-  const offsetFor = (jobId: string, queuedIndex: number): number => {
-    if (!drag?.armed || queuedIndex < 0 || queuedIndex >= drag.slots.length) return 0;
+  /** The drag lifts one row and opens a gap for it; nothing else moves. */
+  const offsetFor = (jobId: string, index: number): number => {
+    if (!drag?.armed || index < 0 || index >= drag.slots.length) return 0;
     if (jobId === drag.id) return drag.dy;
     const { from, to, slots } = drag;
-    if (from < to && queuedIndex > from && queuedIndex <= to) {
-      return slots[queuedIndex - 1]!.top - slots[queuedIndex]!.top;
-    }
-    if (from > to && queuedIndex >= to && queuedIndex < from) {
-      return slots[queuedIndex + 1]!.top - slots[queuedIndex]!.top;
-    }
+    if (from < to && index > from && index <= to) return slots[index - 1]!.top - slots[index]!.top;
+    if (from > to && index >= to && index < from) return slots[index + 1]!.top - slots[index]!.top;
     return 0;
   };
 
   return (
-    <section className="gen-queue" aria-label="Generation queue">
-      {jobs.length > 0 && (
+    <section className="gen-queue" aria-label="Jobs" ref={rootRef}>
+      {finished.length > 0 && (
         <>
-          <header className="gen-queue-head">
-            <span className="gen-queue-title">Queue</span>
-            <span className="gen-queue-count">
-              {queuedIds.length > 0 ? `${queuedIds.length} waiting` : 'nothing waiting'}
-            </span>
-            {finishedCount > 0 && (
-              <button type="button" className="gen-queue-clear" onClick={() => void generation.clearFinished()}>
-                <EraserIcon size={12} />
-                Clear {finishedCount} finished
-              </button>
-            )}
+          <header className="gen-band">
+            <span className="gen-band-label">Finished</span>
+            <span className="gen-band-rule" />
+            <span className="gen-band-count">{finished.length}</span>
           </header>
-
-          <ul className={`gen-queue-list ${drag?.armed ? 'is-reordering' : ''}`} ref={listRef}>
-            {jobs.map((job) => {
-              const queuedIndex = queuedIds.indexOf(job.id);
-              return (
-                <QueueBar
-                  key={job.id}
-                  job={job}
-                  queuedIndex={queuedIndex}
-                  queuedCount={queuedIds.length}
-                  panel={panelFor(job.id)}
-                  onPanel={togglePanel(job.id)}
-                  onClosePanel={() => setOpen(null)}
-                  dragging={drag?.armed === true && drag.id === job.id}
-                  offsetY={offsetFor(job.id, queuedIndex)}
-                  onGripPointerDown={(event) => beginDrag(job, event)}
-                  onGripKeyDown={onGripKeyDown(job, queuedIndex)}
-                />
-              );
-            })}
+          <ul className="gen-shelf">
+            {finished.map((job) => (
+              <FinishedJob
+                key={job.id}
+                job={job}
+                selected={viewer.selectedJobId === job.id}
+                onSelect={() => viewerActions.select(job.id)}
+              />
+            ))}
           </ul>
         </>
       )}
 
-      <Composer
-        panel={panelFor(COMPOSER)}
-        onPanel={togglePanel(COMPOSER)}
-        onClosePanel={() => setOpen(null)}
-      />
+      {/* The rule, the count and the one control that grows the queue. Outside
+          the scrolling list on purpose: adding a job must not depend on how
+          far down the list you happen to be. */}
+      <header className="gen-band">
+        <span className="gen-band-label">Queue</span>
+        <span className="gen-band-rule" />
+        <span className="gen-band-count">
+          {counts.busy
+            ? 'running'
+            : counts.runnable > 0
+              ? `${counts.runnable} ready`
+              : counts.blocked > 0
+                ? `${counts.blocked} unfinished`
+                : 'empty'}
+        </span>
+        <Tooltip content="Add an empty job" position="top" align="end">
+          <button
+            type="button"
+            className="gen-band-add"
+            aria-label="Add an empty job"
+            onClick={() => void generation.addJobs()}
+          >
+            <PlusIcon size={13} />
+          </button>
+        </Tooltip>
+      </header>
+
+      {working.length === 0 ? (
+        <p className="gen-queue-empty">Drop a picture anywhere in the window, or add an empty job.</p>
+      ) : (
+        <ul className={`gen-queue-list ${drag?.armed ? 'is-reordering' : ''}`} ref={listRef}>
+          {working.map((job) => {
+            const index = pendingIds.indexOf(job.id);
+            return (
+              <JobRow
+                key={job.id}
+                job={job}
+                queueIndex={index}
+                queueCount={pendingIds.length}
+                installedModelIds={installedModelIds}
+                knownPipelineIds={knownPipelineIds}
+                selected={viewer.selectedJobId === job.id}
+                onSelect={() => viewerActions.select(job.id)}
+                dragging={drag?.armed === true && drag.id === job.id}
+                offsetY={offsetFor(job.id, index)}
+                onGripPointerDown={(event) => beginDrag(job, event)}
+                onGripKeyDown={onGripKeyDown(job, index)}
+              />
+            );
+          })}
+        </ul>
+      )}
 
       <p className="gen-live" aria-live="polite">
         {announcement}
