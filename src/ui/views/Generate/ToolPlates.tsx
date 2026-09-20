@@ -1,34 +1,35 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Tooltip } from '../../components';
-import { EditIcon, FolderIcon, LoaderIcon } from '../../assets/icons';
+import { EditIcon, FolderIcon, LoaderIcon, PlayIcon } from '../../assets/icons';
 import { useGenerationStore } from '../../stores/generationStore';
 import { MeshTools } from './MeshTools';
 import { OutputsPanel } from './OutputsPanel';
-import { useViewerStore } from './viewerStore';
+import { useQueueCounts } from './queueState';
 
 type PlateId = 'edit' | 'outputs';
 
 const HINTS: Record<PlateId, string> = {
-  edit: 'Edit the mesh in view',
-  outputs: 'Meshes on disk',
+  edit: 'Edit the selected mesh',
+  outputs: 'Meshes you saved',
 };
 
 /**
- * Two plates, bottom right, each a single button that opens one panel. Only
- * one is ever open: they act on the same viewport and would otherwise cover
- * each other as well as the model.
+ * Bottom right: the one control that sets the queue going, and two plates that
+ * each open one panel.
  *
- * Both are about the mesh. How the scene is *drawn* used to be a third plate
- * here called "Camera", which competed with the orientation dial for the same
- * idea; it now sits beside that dial as ViewOptions.
+ * Start lives here rather than on the rows because jobs never run in parallel
+ * — there is one line and one way to set it moving, so there is one button,
+ * across the band from the queue it acts on and reading its count. A per-row
+ * Generate would be six buttons all meaning the same thing.
+ *
+ * Only one plate is ever open: they act on the same viewport and would
+ * otherwise cover each other as well as the model.
  */
 export const ToolPlates: React.FC = () => {
-  const [viewer] = useViewerStore();
-  const [gen] = useGenerationStore();
+  const [, generation] = useGenerationStore();
+  const counts = useQueueCounts();
   const [open, setOpen] = useState<PlateId | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
-
-  const editing = viewer.toolBusy !== null || gen.processing != null;
 
   // Dismiss on anything that reads as "elsewhere": a click outside, or Escape.
   // A modal raised from inside a panel (deleting an output) portals to the
@@ -77,15 +78,36 @@ export const ToolPlates: React.FC = () => {
     );
   };
 
+  const startHint = counts.busy
+    ? 'The queue is already running'
+    : counts.runnable > 0
+      ? `Runs ${counts.runnable === 1 ? 'the job' : `all ${counts.runnable} jobs`} in order, top to bottom`
+      : counts.blocked > 0
+        ? 'Every job is still missing something — check the queue'
+        : 'Add a job first';
+
   return (
     <div className="gen-plates" ref={rootRef}>
+      <Tooltip content={startHint} position="top" align="end">
+        <button
+          type="button"
+          className="gen-start"
+          disabled={counts.busy || counts.runnable === 0}
+          onClick={() => void generation.start()}
+        >
+          {counts.busy ? <LoaderIcon size={14} className="gen-spin" /> : <PlayIcon size={14} />}
+          <span>{counts.busy ? 'Running' : 'Start'}</span>
+          {!counts.busy && counts.runnable > 0 && <span className="gen-start-count">{counts.runnable}</span>}
+        </button>
+      </Tooltip>
+
       {plate(
         'edit',
         'Edit',
-        editing ? <LoaderIcon size={14} className="gen-spin" /> : <EditIcon size={14} />,
+        counts.editing ? <LoaderIcon size={14} className="gen-spin" /> : <EditIcon size={14} />,
         <MeshTools />
       )}
-      {plate('outputs', 'Outputs', <FolderIcon size={14} />, <OutputsPanel />)}
+      {plate('outputs', 'Saved', <FolderIcon size={14} />, <OutputsPanel />)}
     </div>
   );
 };

@@ -73,6 +73,32 @@ function writeManifest(dir: string, model: ModelDefinition, files: SnapshotFile[
 }
 
 /**
+ * Drop directories the move emptied. Files are moved one at a time, so the
+ * checkpoint folder they came from survives as an empty shell — harmless, but
+ * it leaves the old model's folder still apparently holding the checkpoint that
+ * moved out, which is exactly the confusion this migration exists to clear up.
+ * Only ever removes directories it finds empty, so it can never take a file.
+ */
+function pruneEmptyDirs(dir: string): void {
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const child = path.join(dir, entry.name);
+    pruneEmptyDirs(child);
+    try {
+      if (fs.readdirSync(child).length === 0) fs.rmdirSync(child);
+    } catch {
+      // Busy, or gone already. Leaving an empty directory behind costs nothing.
+    }
+  }
+}
+
+/**
  * Adopt one split's files. Returns the bytes rescued, or 0 when there was
  * nothing to do — which is the normal case on every launch after the first.
  */
@@ -119,6 +145,7 @@ function adopt({ from, to }: WeightsSplit): number {
     }
   }
   writeManifest(toDir, target, wanted);
+  pruneEmptyDirs(fromDir);
 
   // The old marker now lists files that have moved out from under it. Left
   // alone it still reads as complete — nothing verifies the list — but it would

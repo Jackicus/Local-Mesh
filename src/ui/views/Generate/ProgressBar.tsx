@@ -3,17 +3,16 @@ import React from 'react';
 export interface ProgressBarProps {
   /** 0-100; clamped. */
   pct: number;
-  tone?: 'accent' | 'success' | 'warning' | 'danger';
   /** A soft sweep for work with no measurable total (model loads). */
   indeterminate?: boolean;
 }
 
-/** The one bar shape the view uses: queue rows, VRAM, downloads-in-progress. */
-export const ProgressBar: React.FC<ProgressBarProps> = ({ pct, tone = 'accent', indeterminate = false }) => {
+/** The thin bar the view uses wherever something is measurably underway. */
+export const ProgressBar: React.FC<ProgressBarProps> = ({ pct, indeterminate = false }) => {
   const clamped = Math.max(0, Math.min(100, pct));
   return (
     <div
-      className={`gen-bar gen-bar-${tone} ${indeterminate ? 'is-indeterminate' : ''}`}
+      className={`gen-bar ${indeterminate ? 'is-indeterminate' : ''}`}
       role="progressbar"
       aria-valuemin={0}
       aria-valuemax={100}

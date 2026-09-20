@@ -11,6 +11,13 @@ const VIEW_DIRECTION = new THREE.Vector3(1, 0.62, 1.15).normalize();
 const EMPTY_BOUNDS = new THREE.Box3(new THREE.Vector3(-1.2, 0, -1.2), new THREE.Vector3(1.2, 1.2, 1.2));
 /** How long the gizmo takes to swing the camera onto an axis. */
 const SNAP_MS = 420;
+/**
+ * A press that travels further than this, or lasts longer, was an orbit. The
+ * canvas is OrbitControls' surface first and a hit target second, so selection
+ * only ever happens on what is unmistakably a click.
+ */
+const CLICK_SLOP = 5;
+const CLICK_MS = 500;
 
 const easeOut = (t: number) => 1 - (1 - t) ** 3;
 
@@ -184,6 +191,33 @@ export function useThreeScene(containerRef: RefObject<HTMLDivElement | null>): v
       },
     };
 
+    // Click the mesh to say "this one". The scene is single-object, so there
+    // is nothing to disambiguate — the raycast is here to tell a click on the
+    // model apart from a click on the empty room around it, which is the
+    // difference between asserting a selection and nudging the camera.
+    const raycaster = new THREE.Raycaster();
+    const pointer = new THREE.Vector2();
+    let press: { x: number; y: number; at: number } | null = null;
+
+    const onPointerDown = (event: PointerEvent) => {
+      press = event.button === 0 ? { x: event.clientX, y: event.clientY, at: performance.now() } : null;
+    };
+
+    const onPointerUp = (event: PointerEvent) => {
+      const started = press;
+      press = null;
+      if (!started || !content) return;
+      if (Math.hypot(event.clientX - started.x, event.clientY - started.y) > CLICK_SLOP) return;
+      if (performance.now() - started.at > CLICK_MS) return;
+      const rect = renderer.domElement.getBoundingClientRect();
+      pointer.set(
+        ((event.clientX - rect.left) / rect.width) * 2 - 1,
+        -((event.clientY - rect.top) / rect.height) * 2 + 1
+      );
+      raycaster.setFromCamera(pointer, camera);
+      if (raycaster.intersectObject(content, true).length > 0) viewerStore.pingSelection();
+    };
+
     const resize = () => {
       const { clientWidth, clientHeight } = container;
       if (clientWidth === 0 || clientHeight === 0) return;
@@ -211,6 +245,8 @@ export function useThreeScene(containerRef: RefObject<HTMLDivElement | null>): v
     };
     controls.addEventListener('change', requestRender);
     controls.addEventListener('start', cancelSnap);
+    renderer.domElement.addEventListener('pointerdown', onPointerDown);
+    renderer.domElement.addEventListener('pointerup', onPointerUp);
     const unregister = viewerStore.registerController(controller);
 
     return () => {
@@ -219,6 +255,8 @@ export function useThreeScene(containerRef: RefObject<HTMLDivElement | null>): v
       observer.disconnect();
       controls.removeEventListener('change', requestRender);
       controls.removeEventListener('start', cancelSnap);
+      renderer.domElement.removeEventListener('pointerdown', onPointerDown);
+      renderer.domElement.removeEventListener('pointerup', onPointerUp);
       if (rafId) cancelAnimationFrame(rafId);
       // The loaded mesh belongs to viewerStore (it survives navigation), so
       // detach it rather than disposing it here.

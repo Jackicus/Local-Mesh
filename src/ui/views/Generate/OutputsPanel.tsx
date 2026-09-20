@@ -8,7 +8,17 @@ import { useGenerationStore } from '../../stores/generationStore';
 import { formatBytes, formatWhen } from './format';
 import { useViewerStore, viewerStore } from './viewerStore';
 
-/** Everything on disk under outputs/, newest first (main sorts it). */
+/**
+ * The outputs folder, newest first (main sorts it).
+ *
+ * This is now genuinely "meshes I kept": generating writes into a job's cache,
+ * and only Save copies one out here. So a short list is not a sign that
+ * nothing has run — it is the list of things someone decided to keep, which is
+ * what the empty state says.
+ *
+ * Opening one is a preview, not a selection: the file no longer belongs to a
+ * job, so the Edit plate must not offer to revise it.
+ */
 export const OutputsPanel: React.FC = () => {
   const [gen] = useGenerationStore();
   const [viewer] = useViewerStore();
@@ -17,8 +27,10 @@ export const OutputsPanel: React.FC = () => {
   const [pendingDelete, setPendingDelete] = useState<OutputItem | null>(null);
   const outputs = env.paths?.outputs;
 
-  // Finished jobs are the only thing that adds files behind our back.
-  const finishedCount = gen.jobs.filter((j) => j.status === 'done').length;
+  // Saving is the only thing that adds a file behind our back, and the job it
+  // came from leaves the queue at the same moment — so the count of jobs is no
+  // signal at all and the store keeps a tick instead.
+  const savedTick = gen.savedTick;
 
   // The panel unmounts whenever its plate closes, and two reads can land out
   // of order; only the newest one is allowed to write.
@@ -39,8 +51,7 @@ export const OutputsPanel: React.FC = () => {
 
   useEffect(() => {
     void refresh();
-    // outputsRevision covers the files the mesh tools write behind our back.
-  }, [refresh, finishedCount, viewer.outputsRevision]);
+  }, [refresh, savedTick]);
 
   const confirmDelete = async () => {
     if (!pendingDelete) return;
@@ -60,7 +71,7 @@ export const OutputsPanel: React.FC = () => {
   return (
     <div className="gen-outputs">
       <header className="gen-panel-head">
-        <span className="gen-panel-title">Outputs</span>
+        <span className="gen-panel-title">Saved</span>
         <span className="gen-panel-meta">{items.length}</span>
         <button
           type="button"
@@ -74,7 +85,7 @@ export const OutputsPanel: React.FC = () => {
       </header>
 
       {items.length === 0 ? (
-        <p className="gen-blank">No meshes yet. Generate one and it lands here.</p>
+        <p className="gen-blank">Nothing saved yet. Save a finished job and it lands here.</p>
       ) : (
         <ul className="gen-output-list">
           {items.map((item) => (
@@ -83,7 +94,7 @@ export const OutputsPanel: React.FC = () => {
                 type="button"
                 className="gen-output-open"
                 title={item.path}
-                onClick={() => void viewerStore.load(item.path)}
+                onClick={() => void viewerStore.preview(item.path)}
               >
                 <span className="gen-output-name">{item.name}</span>
                 <span className="gen-output-meta">
@@ -112,7 +123,7 @@ export const OutputsPanel: React.FC = () => {
         disabled={!outputs}
         onClick={() => outputs && void api()?.openPath(outputs)}
       >
-        Open outputs folder
+        Open the folder
       </Button>
 
       <Modal
