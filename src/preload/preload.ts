@@ -4,13 +4,13 @@ import type {
   ClaudeMdDir,
   ElectronAPI,
   EnvProgressEvent,
-  GenerationJobRequest,
   GenerationState,
+  JobDraft,
   LogChannel,
   LogEntry,
   LogLevel,
   LogReadOptions,
-  MeshProcessRequest,
+  MeshOp,
   ModelDownloadProgress,
   Pipeline,
 } from '../core/types';
@@ -70,13 +70,18 @@ const electronAPI: ElectronAPI = {
   deletePipeline: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.PIPELINES_DELETE, id),
 
   getGenerationState: () => ipcRenderer.invoke(IPC_CHANNELS.GEN_STATE),
-  enqueueGeneration: (request: GenerationJobRequest) =>
-    ipcRenderer.invoke(IPC_CHANNELS.GEN_ENQUEUE, request),
+  addJobs: (imagePaths: string[]) => ipcRenderer.invoke(IPC_CHANNELS.GEN_ADD_JOBS, imagePaths),
+  updateJob: (jobId: string, patch: Partial<JobDraft>) =>
+    ipcRenderer.invoke(IPC_CHANNELS.GEN_UPDATE_JOB, jobId, patch),
+  startQueue: () => ipcRenderer.invoke(IPC_CHANNELS.GEN_START),
   cancelGeneration: (jobId: string) => ipcRenderer.invoke(IPC_CHANNELS.GEN_CANCEL, jobId),
   reorderGeneration: (jobId: string, toIndex: number) =>
     ipcRenderer.invoke(IPC_CHANNELS.GEN_REORDER, jobId, toIndex),
-  dismissGeneration: (jobId: string) => ipcRenderer.invoke(IPC_CHANNELS.GEN_DISMISS, jobId),
-  clearFinishedJobs: () => ipcRenderer.invoke(IPC_CHANNELS.GEN_CLEAR_FINISHED),
+  removeJob: (jobId: string) => ipcRenderer.invoke(IPC_CHANNELS.GEN_REMOVE_JOB, jobId),
+  setJobCursor: (jobId: string, cursor: number) =>
+    ipcRenderer.invoke(IPC_CHANNELS.GEN_SET_CURSOR, jobId, cursor),
+  applyJobEdit: (jobId: string, op: MeshOp) => ipcRenderer.invoke(IPC_CHANNELS.GEN_APPLY_EDIT, jobId, op),
+  saveJob: (jobId: string) => ipcRenderer.invoke(IPC_CHANNELS.GEN_SAVE_JOB, jobId),
   loadModel: (modelId: string) => ipcRenderer.invoke(IPC_CHANNELS.GEN_LOAD_MODEL, modelId),
   unloadModel: () => ipcRenderer.invoke(IPC_CHANNELS.GEN_UNLOAD_MODEL),
   stopWorker: () => ipcRenderer.invoke(IPC_CHANNELS.GEN_STOP_WORKER),
@@ -84,7 +89,6 @@ const electronAPI: ElectronAPI = {
 
   listOutputs: () => ipcRenderer.invoke(IPC_CHANNELS.OUTPUTS_LIST),
   deleteOutput: (path: string) => ipcRenderer.invoke(IPC_CHANNELS.OUTPUTS_DELETE, path),
-  processMesh: (request: MeshProcessRequest) => ipcRenderer.invoke(IPC_CHANNELS.OUTPUTS_PROCESS, request),
 
   readLogs: (channel: LogChannel, options?: LogReadOptions) =>
     ipcRenderer.invoke(IPC_CHANNELS.LOGS_READ, channel, options ?? {}),

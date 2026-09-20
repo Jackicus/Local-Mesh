@@ -1,17 +1,13 @@
 import type { EnvProgressEvent, EnvStatus, LocalMeshPaths, AppSettings } from './env';
-import type {
-  GenerationJobRequest,
-  GenerationState,
-  MeshProcessRequest,
-  MeshProcessResult,
-  OutputItem,
-} from './generation';
+import type { GenerationState, MeshOp, OutputItem } from './generation';
+import type { JobDraft } from './jobs';
 import type { LogChannel, LogEntry, LogLevel, LogReadOptions } from './logs';
 import type { ModelDownloadProgress, ModelInstallState } from './models';
 import type { Pipeline, PipelineSummary } from './pipeline';
 
 export * from './env';
 export * from './generation';
+export * from './jobs';
 export * from './logs';
 export * from './models';
 export * from './pipeline';
@@ -52,7 +48,7 @@ export interface ElectronAPI {
   getPathForFile: (file: File) => string;
   /** Data URL (image/*), or null if unreadable / not an image / over 20MB. */
   readImageDataUrl: (path: string) => Promise<string | null>;
-  /** Bytes of a generated mesh (must live under outputs/). */
+  /** Bytes of a generated mesh (must live under outputs/ or a job's cache/ directory). */
   readOutputFile: (path: string) => Promise<ArrayBuffer | null>;
 
   // Settings
@@ -82,15 +78,40 @@ export interface ElectronAPI {
   writePipeline: (pipeline: Pipeline) => Promise<boolean>;
   deletePipeline: (id: string) => Promise<boolean>;
 
-  // Generation queue + python worker
+  // Generation queue + python worker.
+  //
+  // The queue is the app's one workspace: a job is added, edited, reordered,
+  // started, edited again once it has a mesh, and finally saved or thrown away.
+  // Every one of those verbs is a call here, and every one of them answers with
+  // a fresh GenerationState push rather than a return value the caller has to
+  // reconcile.
   getGenerationState: () => Promise<GenerationState>;
-  enqueueGeneration: (request: GenerationJobRequest) => Promise<string[]>;
+  /**
+   * Add one draft job per image, or a single empty one when given no images.
+   * Returns the new job ids, in the order they were appended.
+   */
+  addJobs: (imagePaths: string[]) => Promise<string[]>;
+  /** Change a job's source, image, name, modifiers or format. Refuses once it has started. */
+  updateJob: (jobId: string, patch: Partial<JobDraft>) => Promise<boolean>;
+  /** Promote every runnable draft to queued and start working down the list. Returns how many. */
+  startQueue: () => Promise<number>;
   cancelGeneration: (jobId: string) => Promise<void>;
-  /** Move a queued job to `toIndex` among the queued jobs. No-op for running or finished ones. */
+  /** Move a job to `toIndex` among the jobs that have not started. */
   reorderGeneration: (jobId: string, toIndex: number) => Promise<boolean>;
-  /** Drop one finished job from the queue snapshot. Refuses while it is queued or running. */
-  dismissGeneration: (jobId: string) => Promise<boolean>;
-  clearFinishedJobs: () => Promise<void>;
+  /** Delete a job and its cached revisions. Cancels it first if it is still running. */
+  removeJob: (jobId: string) => Promise<boolean>;
+  /** Point a finished job at another of its revisions — the row's back and forward. */
+  setJobCursor: (jobId: string, cursor: number) => Promise<boolean>;
+  /**
+   * Run one mesh edit on a finished job's current revision and push the result
+   * on as a new revision. Rejects while the queue or the worker is busy.
+   */
+  applyJobEdit: (jobId: string, op: MeshOp) => Promise<boolean>;
+  /**
+   * Write a finished job's current revision into the outputs folder and drop
+   * the job, cache and all. Returns the saved path.
+   */
+  saveJob: (jobId: string) => Promise<string | null>;
   loadModel: (modelId: string) => Promise<void>;
   unloadModel: () => Promise<void>;
   stopWorker: () => Promise<void>;
@@ -99,8 +120,6 @@ export interface ElectronAPI {
   // Outputs
   listOutputs: () => Promise<OutputItem[]>;
   deleteOutput: (path: string) => Promise<boolean>;
-  /** Reduce / smooth an existing output via the worker; writes a new file next to it. Rejects while a job is running. */
-  processMesh: (request: MeshProcessRequest) => Promise<MeshProcessResult>;
 
   // Logs
   readLogs: (channel: LogChannel, options?: LogReadOptions) => Promise<LogEntry[]>;
@@ -163,11 +182,15 @@ export const IPC_CHANNELS = {
   PIPELINES_DELETE: 'pipelines:delete',
 
   GEN_STATE: 'gen:state',
-  GEN_ENQUEUE: 'gen:enqueue',
+  GEN_ADD_JOBS: 'gen:addJobs',
+  GEN_UPDATE_JOB: 'gen:updateJob',
+  GEN_START: 'gen:start',
   GEN_CANCEL: 'gen:cancel',
   GEN_REORDER: 'gen:reorder',
-  GEN_DISMISS: 'gen:dismiss',
-  GEN_CLEAR_FINISHED: 'gen:clearFinished',
+  GEN_REMOVE_JOB: 'gen:removeJob',
+  GEN_SET_CURSOR: 'gen:setCursor',
+  GEN_APPLY_EDIT: 'gen:applyEdit',
+  GEN_SAVE_JOB: 'gen:saveJob',
   GEN_LOAD_MODEL: 'gen:loadModel',
   GEN_UNLOAD_MODEL: 'gen:unloadModel',
   GEN_STOP_WORKER: 'gen:stopWorker',
@@ -175,7 +198,6 @@ export const IPC_CHANNELS = {
 
   OUTPUTS_LIST: 'outputs:list',
   OUTPUTS_DELETE: 'outputs:delete',
-  OUTPUTS_PROCESS: 'outputs:process',
 
   LOGS_READ: 'logs:read',
   LOGS_CLEAR: 'logs:clear',

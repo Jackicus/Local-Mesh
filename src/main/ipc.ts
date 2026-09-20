@@ -3,11 +3,11 @@ import path from 'node:path';
 import { IPC_CHANNELS, LOG_CHANNELS, LOG_LEVELS } from '../core/types';
 import type {
   AppSettings,
-  GenerationJobRequest,
+  JobDraft,
   LogChannel,
   LogLevel,
   LogReadOptions,
-  MeshProcessRequest,
+  MeshOp,
   Pipeline,
 } from '../core/types';
 import {
@@ -39,18 +39,21 @@ import {
 import { deletePipeline, listPipelines, readPipeline, writePipeline } from './pipelines';
 import { errorMessage } from './proc';
 import {
+  addJobs,
+  applyJobEdit,
   cancelGeneration,
-  clearFinishedJobs,
-  dismissJob,
-  enqueue,
   loadModel,
   onSettingsChanged,
-  processMesh,
+  removeJob,
   reorderQueue,
+  saveJob,
+  setJobCursor,
+  startQueue,
   stopWorker,
   unloadModel,
+  updateJob,
 } from './queue';
-import { getState } from './queueState';
+import { getState } from './jobStore';
 import { getSettings, setSettings } from './settings';
 
 /**
@@ -64,9 +67,9 @@ import { getSettings, setSettings } from './settings';
  * knows — is not logged a second time here just because it unwound this far.
  */
 
-/** `gen:*` and `outputs:process` are worker work; the rest is app surface. */
+/** `gen:*` is queue and worker work; the rest is app surface. */
 function channelFor(channel: string): 'general' | 'generation' {
-  return channel.startsWith('gen:') || channel === IPC_CHANNELS.OUTPUTS_PROCESS ? 'generation' : 'general';
+  return channel.startsWith('gen:') ? 'generation' : 'general';
 }
 
 /**
@@ -144,11 +147,15 @@ export function registerAllHandlers(): void {
 
   // Generation queue
   handle(IPC_CHANNELS.GEN_STATE, () => getState());
-  handle(IPC_CHANNELS.GEN_ENQUEUE, (request: GenerationJobRequest) => enqueue(request));
+  handle(IPC_CHANNELS.GEN_ADD_JOBS, (imagePaths: string[]) => addJobs(imagePaths));
+  handle(IPC_CHANNELS.GEN_UPDATE_JOB, (jobId: string, patch: Partial<JobDraft>) => updateJob(jobId, patch));
+  handle(IPC_CHANNELS.GEN_START, () => startQueue());
   handle(IPC_CHANNELS.GEN_CANCEL, (jobId: string) => cancelGeneration(jobId));
   handle(IPC_CHANNELS.GEN_REORDER, (jobId: string, toIndex: number) => reorderQueue(jobId, toIndex));
-  handle(IPC_CHANNELS.GEN_DISMISS, (jobId: string) => dismissJob(jobId));
-  handle(IPC_CHANNELS.GEN_CLEAR_FINISHED, () => clearFinishedJobs());
+  handle(IPC_CHANNELS.GEN_REMOVE_JOB, (jobId: string) => removeJob(jobId));
+  handle(IPC_CHANNELS.GEN_SET_CURSOR, (jobId: string, cursor: number) => setJobCursor(jobId, cursor));
+  handle(IPC_CHANNELS.GEN_APPLY_EDIT, (jobId: string, op: MeshOp) => applyJobEdit(jobId, op));
+  handle(IPC_CHANNELS.GEN_SAVE_JOB, (jobId: string) => saveJob(jobId));
   handle(IPC_CHANNELS.GEN_LOAD_MODEL, (modelId: string) => loadModel(modelId));
   handle(IPC_CHANNELS.GEN_UNLOAD_MODEL, () => unloadModel());
   handle(IPC_CHANNELS.GEN_STOP_WORKER, () => stopWorker(true));
@@ -156,7 +163,6 @@ export function registerAllHandlers(): void {
   // Outputs
   handle(IPC_CHANNELS.OUTPUTS_LIST, () => listOutputs());
   handle(IPC_CHANNELS.OUTPUTS_DELETE, (file: string) => deleteOutput(file));
-  handle(IPC_CHANNELS.OUTPUTS_PROCESS, (request: MeshProcessRequest) => processMesh(request));
 
   // Logs
   handle(IPC_CHANNELS.LOGS_READ, (channel: LogChannel, options?: LogReadOptions) =>

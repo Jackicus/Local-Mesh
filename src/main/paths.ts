@@ -30,6 +30,7 @@ export function getPaths(): LocalMeshPaths {
       scripts: path.join(app.getAppPath(), 'resources', 'python'),
       models: path.join(root, 'models'),
       outputs: path.join(root, 'outputs'),
+      cache: path.join(root, 'cache'),
       inputs: path.join(root, 'inputs'),
       pipelines: path.join(root, 'pipelines'),
       logs: path.join(root, 'logs'),
@@ -73,11 +74,16 @@ export function getSettingsPath(): string {
   return path.join(getPaths().root, 'settings.json');
 }
 
+/** The persisted job list. See jobStore.ts for why the queue outlives the process. */
+export function getQueuePath(): string {
+  return path.join(getPaths().root, 'queue.json');
+}
+
 export function ensureTree(): void {
   const p = getPaths();
   // `scripts` points into the read-only app bundle, so it is not ours to create.
   for (const dir of [
-    p.root, p.env, p.models, p.outputs, p.inputs, p.pipelines, p.logs, getReposDir(), getRembgDir(),
+    p.root, p.env, p.models, p.outputs, p.cache, p.inputs, p.pipelines, p.logs, getReposDir(), getRembgDir(),
     getTorchHubDir(),
   ]) {
     fs.mkdirSync(dir, { recursive: true });
@@ -127,9 +133,19 @@ export function readImageDataUrl(filePath: string): string | null {
   }
 }
 
-/** Bytes of a generated mesh. Refuses anything outside outputs/. */
+/**
+ * Bytes of a generated mesh, for the viewer.
+ *
+ * Two directories hold meshes now: outputs/ is what the user has chosen to
+ * keep, and cache/<jobId>/ is the working set — the generated mesh plus every
+ * edited revision of a job that has not been saved or thrown away yet. The
+ * viewer shows both, so both are readable; anywhere else on the disk is not,
+ * and the containment check is the whole of that guarantee.
+ */
 export function readOutputFile(filePath: string): ArrayBuffer | null {
-  if (typeof filePath !== 'string' || !isInside(getPaths().outputs, filePath)) return null;
+  if (typeof filePath !== 'string') return null;
+  const paths = getPaths();
+  if (!isInside(paths.outputs, filePath) && !isInside(paths.cache, filePath)) return null;
   try {
     const bytes = fs.readFileSync(filePath);
     // Copy into a fresh ArrayBuffer so the renderer receives a plain

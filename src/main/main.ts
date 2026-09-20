@@ -6,11 +6,14 @@ import { CLAUDE_MD_DIRS, IPC_CHANNELS } from '../core/types';
 import { killEnvChildren } from './envManager';
 import { since } from './format';
 import { registerAllHandlers } from './ipc';
+import { loadJobs } from './jobStore';
 import { initLogger, installCrashLogging, log } from './logger';
-import { killDownloadChildren } from './modelManager';
+import { migrateSplitWeights } from './migrateWeights';
+import { killDownloadChildren, listModels } from './modelManager';
 import { ensureTree, getPaths } from './paths';
 import { ensureDefaultPipeline } from './pipelines';
 import { shutdownQueue } from './queue';
+import { getSettings } from './settings';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -388,6 +391,21 @@ app.whenReady().then(() => {
     `local mesh ${app.getVersion()} started — electron ${process.versions.electron}, node ${process.versions.node}, ` +
       `${process.platform} ${process.arch}, root ${getPaths().root}`
   );
+  // Before anything reads an install state: rescue weights a registry split
+  // left in the wrong folder, so a model that is already on disk is not
+  // offered as a fresh download.
+  migrateSplitWeights();
+  // The job list outlives the process: a finished job holds a mesh the user has
+  // not saved or thrown away yet. Read it back before any window can ask for
+  // the queue, and before the first broadcast overwrites the file with nothing.
+  try {
+    loadJobs(getSettings().defaultModelId ?? listModels().find((m) => m.ready)?.id ?? null);
+  } catch (err) {
+    log.general.error(
+      `the saved job queue could not be read: ${err instanceof Error ? err.message : String(err)}. ` +
+        'Starting with an empty queue.'
+    );
+  }
   try {
     ensureDefaultPipeline();
   } catch (err) {

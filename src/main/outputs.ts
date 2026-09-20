@@ -4,7 +4,7 @@ import type { ExportFormat, OutputItem } from '../core/types';
 import { formatBytes } from './format';
 import { log } from './logger';
 import { getPaths, isInside } from './paths';
-import { getState } from './queueState';
+import { getState, jobModelId } from './jobStore';
 
 const FORMATS: ExportFormat[] = ['glb', 'obj', 'stl', 'ply'];
 
@@ -21,10 +21,15 @@ export function listOutputs(): OutputItem[] {
   } catch {
     return [];
   }
-  // Attribute files to the jobs that produced them, while those jobs are still in memory.
-  const byOutput = new Map<string, { jobId: string; modelId: string }>();
+  // Attribute files to the job that saved them. A saved job leaves the queue
+  // immediately, so this is usually empty — the attribution only survives for
+  // as long as the save is still being processed, which is enough for the push
+  // that follows it.
+  const byOutput = new Map<string, { jobId: string; modelId?: string }>();
   for (const job of getState().jobs) {
-    if (job.outputPath) byOutput.set(path.resolve(job.outputPath), { jobId: job.id, modelId: job.modelId });
+    if (!job.savedPath) continue;
+    const modelId = jobModelId(job);
+    byOutput.set(path.resolve(job.savedPath), { jobId: job.id, ...(modelId ? { modelId } : {}) });
   }
   const items: OutputItem[] = [];
   for (const name of names) {

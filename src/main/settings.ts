@@ -38,6 +38,11 @@ export function sanitizeSettings(raw: unknown, base: AppSettings = DEFAULT_SETTI
         ? src.defaultPipelineId
         : null
       : base.defaultPipelineId,
+    defaultModelId: has('defaultModelId')
+      ? typeof src.defaultModelId === 'string' && src.defaultModelId
+        ? src.defaultModelId
+        : null
+      : base.defaultModelId,
   };
 }
 
