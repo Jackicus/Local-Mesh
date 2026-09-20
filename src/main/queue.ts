@@ -719,7 +719,16 @@ async function runJob(job: GenerationJob): Promise<void> {
     job.progress = { pct: 0, stage: 'prepare', message: 'Starting' };
     state.worker = 'generating';
     broadcast(true);
-    glog.info(`generating ${spec.export.baseName}.${spec.export.format} with ${spec.modelId}`, job.id);
+    // The op chain is named here for the same reason the edit path names it:
+    // ops are silent when they have nothing to do — a Decimate under its face
+    // cap, a Fill Holes on a closed surface — so a mesh that comes back
+    // unchanged is indistinguishable from a chain that never ran unless the
+    // log says what was asked for.
+    const chain = spec.postProcess.length ? `, then ${spec.postProcess.map(describeMeshOp).join(', ')}` : '';
+    glog.info(
+      `generating ${spec.export.baseName}.${spec.export.format} with ${spec.modelId}${chain}`,
+      job.id
+    );
 
     instance.send({ cmd: 'generate', job: spec });
     const result = await awaitGenerate(instance, job);
