@@ -29,12 +29,6 @@ const EFFORT_KEYS = new Set(['steps', 'ssSteps', 'slatSteps']);
 /** Dials that are a grid size, offered as a fixed set of options. */
 const RESOLUTION_KEYS = new Set(['octreeResolution', 'mcResolution']);
 
-/**
- * Hunyuan3D 2's two checkpoints are the single biggest speed lever it has, and
- * the step count that suits one is wrong for the other, so they move together.
- */
-const VARIANT_STEPS: Record<string, number> = { turbo: 5, standard: 30 };
-
 function clampNumber(setting: ModelSetting, value: number): number {
   const min = setting.min ?? Number.NEGATIVE_INFINITY;
   const max = setting.max ?? Number.POSITIVE_INFINITY;
@@ -70,18 +64,6 @@ export function applyQuality(
 
     const current = out[setting.key] ?? setting.default;
 
-    if (setting.key === 'variant' && setting.type === 'select') {
-      const wanted = preset === 'detailed' ? 'standard' : preset === 'fast' ? 'turbo' : setting.default;
-      if (setting.options?.some((o) => o.value === wanted)) {
-        out.variant = wanted as string;
-        const steps = model.settings.find((s) => s.key === 'steps');
-        if (steps && VARIANT_STEPS[String(wanted)] != null) {
-          out.steps = clampNumber(steps, VARIANT_STEPS[String(wanted)]!);
-        }
-      }
-      continue;
-    }
-
     if (preset === 'balanced') {
       out[setting.key] = setting.default;
       continue;
@@ -116,7 +98,7 @@ export function detectQuality(
   settings: Record<string, number | string | boolean>
 ): QualityPreset | null {
   const relevant = model.settings.filter(
-    (s) => s.type !== 'seed' && !s.advanced && (EFFORT_KEYS.has(s.key) || RESOLUTION_KEYS.has(s.key) || s.key === 'variant')
+    (s) => s.type !== 'seed' && !s.advanced && (EFFORT_KEYS.has(s.key) || RESOLUTION_KEYS.has(s.key))
   );
   if (relevant.length === 0) return 'balanced';
 

@@ -4,8 +4,8 @@
  * form from `settings`, and the main process uses `hfRepo` / `requirements` /
  * `backend` to download and run each one. Each `backend` name is resolved to a
  * python class by resources/python/backends/registry.py — usually the module of
- * the same name, occasionally a second class in a shared module (the two
- * Hunyuan3D 2.0 tiers differ only by checkpoint folder).
+ * the same name, occasionally one of several classes in a shared module (the
+ * four Hunyuan3D 2.0 entries differ only by which checkpoint folder they pin).
  *
  * VRAM/disk numbers are estimates for image -> shape (no texture). Keep entries
  * honest: the list spans 4 GB cards to 16 GB ones, and the Models view compares
@@ -128,6 +128,84 @@ const SEED: ModelSetting = {
   default: -1,
 };
 
+/**
+ * The dials every Hunyuan3D 2 shape model shares.
+ *
+ * Turbo and standard used to be one entry with a `variant` picker, which meant
+ * downloading both checkpoints (7.7 GB for the mini, 9.9 GB for the 1.1B) to
+ * use one of them, and quoting a size and a speed that were true of neither.
+ * They are separate entries now, so the only thing that varies between the
+ * four is the step count each checkpoint is tuned for and the octree grid the
+ * family defaults to.
+ */
+function hunyuanShapeSettings(steps: number, octreeResolution: number): ModelSetting[] {
+  return [
+    {
+      key: 'steps',
+      label: 'Steps',
+      description:
+        'How many denoising passes the model makes on its way from noise to a shape. ' +
+        `This checkpoint is tuned for about ${steps}; going far past that is slower with little to show for it.`,
+      type: 'number',
+      default: steps,
+      min: 1,
+      max: 100,
+      step: 1,
+    },
+    {
+      key: 'guidance',
+      label: 'Guidance scale',
+      description:
+        'How hard the model is pushed towards the image. Too low drifts off the reference, too high stiffens the shape and adds creases; 5 is the safe middle.',
+      type: 'number',
+      default: 5,
+      min: 0,
+      max: 20,
+      step: 0.5,
+    },
+    {
+      key: 'octreeResolution',
+      label: 'Octree resolution',
+      description:
+        'Size of the grid the surface is carved out of. Each step up roughly doubles decode time and VRAM — ' +
+        `${octreeResolution} is what this model was tuned against, and 512 wants headroom.`,
+      type: 'select',
+      default: octreeResolution,
+      options: [
+        { value: 128, label: '128' },
+        { value: 256, label: '256' },
+        { value: 384, label: '384' },
+        { value: 512, label: '512' },
+      ],
+    },
+    {
+      key: 'numChunks',
+      label: 'Decode chunks',
+      description:
+        'How many batches the decoder splits its sample points into. More chunks means less VRAM held at once and a slightly slower decode; the mesh is unchanged.',
+      type: 'number',
+      default: 8000,
+      min: 1000,
+      max: 200000,
+      step: 1000,
+      advanced: true,
+    },
+    {
+      key: 'mcLevel',
+      label: 'MC level',
+      description:
+        'The value in the density field the surface is cut at. 0 is what the model was trained for; a small offset either way fattens or shaves the surface — a last resort for pinholes or bloat.',
+      type: 'number',
+      default: 0,
+      min: -1,
+      max: 1,
+      step: 0.01,
+      advanced: true,
+    },
+    SEED,
+  ];
+}
+
 export const MODELS: ModelDefinition[] = [
   {
     id: 'triposr',
@@ -199,18 +277,18 @@ export const MODELS: ModelDefinition[] = [
     supportsLowVram: true,
   },
   {
-    id: 'hunyuan3d-2mini',
-    name: 'Hunyuan3D 2 mini',
+    id: 'hunyuan3d-2mini-turbo',
+    name: 'Hunyuan3D 2 mini turbo',
     vendor: 'Tencent',
     description:
-      'The 0.6B shape model from the Hunyuan3D 2 family. Best quality-per-gigabyte on an 8GB card; the turbo variant trades a little detail for ~5 steps.',
+      'The distilled 0.6B shape model from the Hunyuan3D 2 family: a full mesh in about 5 steps, at the best quality-per-gigabyte on an 8GB card.',
     hfRepo: 'tencent/Hunyuan3D-2mini',
-    // Each DiT folder ships the same weights as .ckpt AND .safetensors (3.8 GB
-    // each); take only the safetensors. The VAE weights are inside the DiT
-    // checkpoint, so the separate vae folders are not needed.
+    // One DiT folder only. It ships the same weights as .ckpt AND .safetensors
+    // (3.8 GB each); take only the safetensors. The VAE and the DINOv2
+    // conditioner live inside that checkpoint, so the separate vae folders are
+    // not needed — and neither is the standard checkpoint, which is its own
+    // registry entry now.
     hfAllowPatterns: [
-      'hunyuan3d-dit-v2-mini/*.safetensors',
-      'hunyuan3d-dit-v2-mini/config.yaml',
       'hunyuan3d-dit-v2-mini-turbo/*.safetensors',
       'hunyuan3d-dit-v2-mini-turbo/config.yaml',
       '*.md',
@@ -218,88 +296,71 @@ export const MODELS: ModelDefinition[] = [
     ],
     params: '0.6B',
     vramGb: 5,
-    diskGb: 7.7,
+    diskGb: 3.9,
+    license: 'Tencent Hunyuan Community',
+    releaseDate: '2025-03',
+    homepage: 'https://huggingface.co/tencent/Hunyuan3D-2mini',
+    backend: 'hunyuan3d_mini_turbo',
+    requirements: 'hunyuan3d.txt',
+    settings: hunyuanShapeSettings(5, 256),
+    tags: ['recommended', 'fast'],
+    supportsLowVram: true,
+  },
+  {
+    id: 'hunyuan3d-2mini',
+    name: 'Hunyuan3D 2 mini',
+    vendor: 'Tencent',
+    description:
+      'The undistilled 0.6B shape model. Same weights class as the turbo entry and the same memory, but 30-50 steps instead of 5, for slightly finer detail.',
+    hfRepo: 'tencent/Hunyuan3D-2mini',
+    // The standard checkpoint only; see the turbo entry above for why the vae
+    // and ckpt files are skipped.
+    hfAllowPatterns: [
+      'hunyuan3d-dit-v2-mini/*.safetensors',
+      'hunyuan3d-dit-v2-mini/config.yaml',
+      '*.md',
+      '*.json',
+    ],
+    params: '0.6B',
+    vramGb: 5,
+    diskGb: 3.9,
     license: 'Tencent Hunyuan Community',
     releaseDate: '2025-03',
     homepage: 'https://huggingface.co/tencent/Hunyuan3D-2mini',
     backend: 'hunyuan3d_mini',
     requirements: 'hunyuan3d.txt',
-    settings: [
-      {
-        key: 'variant',
-        label: 'Variant',
-        description:
-          'Turbo is a distilled checkpoint that lands in about 5 steps; standard takes 30-50 for slightly finer detail. Each is a separate file, so switching reloads the model.',
-        type: 'select',
-        default: 'turbo',
-        options: [
-          { value: 'turbo', label: 'Turbo (5 steps, fast)' },
-          { value: 'standard', label: 'Standard (30-50 steps)' },
-        ],
-      },
-      {
-        key: 'steps',
-        label: 'Steps',
-        description:
-          'How many denoising passes the model makes on its way from noise to a shape. Turbo is tuned for about 5 and standard for 30-50; going past that is slower with little to show for it.',
-        type: 'number',
-        default: 5,
-        min: 1,
-        max: 100,
-        step: 1,
-      },
-      {
-        key: 'guidance',
-        label: 'Guidance scale',
-        description:
-          'How hard the model is pushed towards the image. Too low drifts off the reference, too high stiffens the shape and adds creases; 5 is the safe middle.',
-        type: 'number',
-        default: 5,
-        min: 0,
-        max: 20,
-        step: 0.5,
-      },
-      {
-        key: 'octreeResolution',
-        label: 'Octree resolution',
-        description:
-          'Size of the grid the surface is carved out of. Each step up roughly doubles decode time and VRAM — 256 is a good default, 384+ wants headroom.',
-        type: 'select',
-        default: 256,
-        options: [
-          { value: 128, label: '128' },
-          { value: 256, label: '256' },
-          { value: 384, label: '384' },
-          { value: 512, label: '512' },
-        ],
-      },
-      {
-        key: 'numChunks',
-        label: 'Decode chunks',
-        description:
-          'How many batches the decoder splits its sample points into. More chunks means less VRAM held at once and a slightly slower decode; the mesh is unchanged.',
-        type: 'number',
-        default: 8000,
-        min: 1000,
-        max: 200000,
-        step: 1000,
-        advanced: true,
-      },
-      {
-        key: 'mcLevel',
-        label: 'MC level',
-        description:
-          'The value in the density field the surface is cut at. 0 is what the model was trained for; a small offset either way fattens or shaves the surface — a last resort for pinholes or bloat.',
-        type: 'number',
-        default: 0,
-        min: -1,
-        max: 1,
-        step: 0.01,
-        advanced: true,
-      },
-      SEED,
+    settings: hunyuanShapeSettings(30, 256),
+    tags: ['quality'],
+    supportsLowVram: true,
+  },
+  {
+    id: 'hunyuan3d-2-turbo',
+    name: 'Hunyuan3D 2 turbo',
+    vendor: 'Tencent',
+    description:
+      'The distilled full-size 1.1B shape model the mini was cut down from: cleaner surfaces and finer detail in about 5 steps. Needs a 6GB card.',
+    hfRepo: 'tencent/Hunyuan3D-2',
+    // The DiT folder publishes the same weights twice (.ckpt and
+    // .safetensors), so a `*.safetensors` glob would still fetch both. Name the
+    // fp16 safetensors file exactly. As with the mini, the VAE and the DINOv2
+    // conditioner live inside the DiT checkpoint, so hunyuan3d-vae-v2-0* is not
+    // needed; hunyuan3d-paint-* and -delight-* are texture-only.
+    hfAllowPatterns: [
+      'hunyuan3d-dit-v2-0-turbo/model.fp16.safetensors',
+      'hunyuan3d-dit-v2-0-turbo/config.yaml',
+      '*.md',
+      '*.json',
     ],
-    tags: ['recommended', 'quality'],
+    params: '1.1B',
+    vramGb: 6,
+    diskGb: 4.9,
+    license: 'Tencent Hunyuan Community',
+    releaseDate: '2025-01',
+    homepage: 'https://huggingface.co/tencent/Hunyuan3D-2',
+    backend: 'hunyuan3d_2_turbo',
+    requirements: 'hunyuan3d.txt',
+    settings: hunyuanShapeSettings(5, 384),
+    tags: ['fast'],
     supportsLowVram: true,
   },
   {
@@ -307,17 +368,11 @@ export const MODELS: ModelDefinition[] = [
     name: 'Hunyuan3D 2',
     vendor: 'Tencent',
     description:
-      'The full 1.1B shape model the mini was distilled from: noticeably cleaner surfaces and finer detail. Needs a 6GB card.',
+      'The undistilled 1.1B shape model, the sharpest geometry that still fits comfortably under 8GB. 30-50 steps rather than 5.',
     hfRepo: 'tencent/Hunyuan3D-2',
-    // Each DiT folder publishes the same weights twice (.ckpt and
-    // .safetensors), and hunyuan3d-dit-v2-0 adds fp32 duplicates on top, so a
-    // `*.safetensors` glob would fetch 9.9 GB where 4.9 GB is needed. Name the
-    // fp16 safetensors file exactly. As with the mini, the VAE and the DINOv2
-    // conditioner live inside the DiT checkpoint, so hunyuan3d-vae-v2-0* is not
-    // needed; hunyuan3d-paint-* and -delight-* are texture-only.
+    // The standard checkpoint only; see the turbo entry above. This folder also
+    // carries fp32 duplicates, which naming the fp16 file exactly skips.
     hfAllowPatterns: [
-      'hunyuan3d-dit-v2-0-turbo/model.fp16.safetensors',
-      'hunyuan3d-dit-v2-0-turbo/config.yaml',
       'hunyuan3d-dit-v2-0/model.fp16.safetensors',
       'hunyuan3d-dit-v2-0/config.yaml',
       '*.md',
@@ -325,87 +380,13 @@ export const MODELS: ModelDefinition[] = [
     ],
     params: '1.1B',
     vramGb: 6,
-    diskGb: 9.9,
+    diskGb: 4.9,
     license: 'Tencent Hunyuan Community',
     releaseDate: '2025-01',
     homepage: 'https://huggingface.co/tencent/Hunyuan3D-2',
     backend: 'hunyuan3d_2',
     requirements: 'hunyuan3d.txt',
-    settings: [
-      {
-        key: 'variant',
-        label: 'Variant',
-        description:
-          'Turbo is a distilled checkpoint that lands in about 5 steps; standard takes 30-50 for slightly finer detail. Each is a separate file, so switching reloads the model.',
-        type: 'select',
-        default: 'turbo',
-        options: [
-          { value: 'turbo', label: 'Turbo (5 steps, fast)' },
-          { value: 'standard', label: 'Standard (30-50 steps)' },
-        ],
-      },
-      {
-        key: 'steps',
-        label: 'Steps',
-        description:
-          'How many denoising passes the model makes on its way from noise to a shape. Turbo is tuned for about 5 and standard for 30-50; going past that is slower with little to show for it.',
-        type: 'number',
-        default: 5,
-        min: 1,
-        max: 100,
-        step: 1,
-      },
-      {
-        key: 'guidance',
-        label: 'Guidance scale',
-        description:
-          'How hard the model is pushed towards the image. Too low drifts off the reference, too high stiffens the shape and adds creases; 5 is the safe middle.',
-        type: 'number',
-        default: 5,
-        min: 0,
-        max: 20,
-        step: 0.5,
-      },
-      {
-        key: 'octreeResolution',
-        label: 'Octree resolution',
-        description:
-          'Size of the grid the surface is carved out of. 384 matches the upstream demo; 512 costs noticeably more VRAM and time for detail the model rarely has.',
-        type: 'select',
-        default: 384,
-        options: [
-          { value: 128, label: '128' },
-          { value: 256, label: '256' },
-          { value: 384, label: '384' },
-          { value: 512, label: '512' },
-        ],
-      },
-      {
-        key: 'numChunks',
-        label: 'Decode chunks',
-        description:
-          'How many batches the decoder splits its sample points into. More chunks means less VRAM held at once and a slightly slower decode; the mesh is unchanged.',
-        type: 'number',
-        default: 8000,
-        min: 1000,
-        max: 200000,
-        step: 1000,
-        advanced: true,
-      },
-      {
-        key: 'mcLevel',
-        label: 'MC level',
-        description:
-          'The value in the density field the surface is cut at. 0 is what the model was trained for; a small offset either way fattens or shaves the surface — a last resort for pinholes or bloat.',
-        type: 'number',
-        default: 0,
-        min: -1,
-        max: 1,
-        step: 0.01,
-        advanced: true,
-      },
-      SEED,
-    ],
+    settings: hunyuanShapeSettings(30, 384),
     tags: ['quality'],
     supportsLowVram: true,
   },

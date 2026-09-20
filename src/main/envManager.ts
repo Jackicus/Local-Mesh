@@ -96,7 +96,7 @@ export interface Manifest {
 
 // Mirrors resources/python/manifest.json; used when the file is absent (dev before the python side lands).
 const FALLBACK_MANIFEST: Manifest = {
-  version: '0.2.0',
+  version: '0.3.0',
   python: '3.11',
   torch: {
     variants: [
@@ -109,7 +109,11 @@ const FALLBACK_MANIFEST: Manifest = {
   models: {
     'hunyuan3d-2mini': {
       requirements: 'requirements/hunyuan3d.txt',
-      repos: [{ url: 'https://github.com/Tencent-Hunyuan/Hunyuan3D-2.git', dir: 'Hunyuan3D-2', pipInstall: true }],
+      repos: [{ url: 'https://github.com/Tencent-Hunyuan/Hunyuan3D-2.git', dir: 'Hunyuan3D-2', pipInstall: false }],
+    },
+    'hunyuan3d-2mini-turbo': {
+      requirements: 'requirements/hunyuan3d.txt',
+      repos: [{ url: 'https://github.com/Tencent-Hunyuan/Hunyuan3D-2.git', dir: 'Hunyuan3D-2', pipInstall: false }],
     },
     triposr: {
       requirements: 'requirements/triposr.txt',
@@ -120,6 +124,10 @@ const FALLBACK_MANIFEST: Manifest = {
       repos: [{ url: 'https://github.com/VAST-AI-Research/TripoSG.git', dir: 'TripoSG', pipInstall: false }],
     },
     'hunyuan3d-2': {
+      requirements: 'requirements/hunyuan3d.txt',
+      repos: [{ url: 'https://github.com/Tencent-Hunyuan/Hunyuan3D-2.git', dir: 'Hunyuan3D-2', pipInstall: false }],
+    },
+    'hunyuan3d-2-turbo': {
       requirements: 'requirements/hunyuan3d.txt',
       repos: [{ url: 'https://github.com/Tencent-Hunyuan/Hunyuan3D-2.git', dir: 'Hunyuan3D-2', pipInstall: false }],
     },
