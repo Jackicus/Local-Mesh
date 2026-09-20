@@ -1,5 +1,5 @@
 /**
- * What a model needs before it runs, and the one thing to press about it.
+ * What a model needs before it runs, and the things to press about it.
  *
  * A model only runs when three independent things are true:
  *
@@ -7,12 +7,18 @@
  *   2. files  — this model's weights are on disk (plain download, needs no env)
  *   3. extras — this model's Python packages are installed into the engine
  *
- * That used to be three buttons and a progress track on the front of every
- * card, which is plumbing: nobody installing an app wants to know it has a
- * venv. `modelStore.install()` now runs all three back to back, so this module
- * derives ONE action ("Install" / "Stop" / "Try again") and ONE plain-language
- * line about whatever is happening. The per-step detail survives as `steps`,
- * which only the expanded details panel renders.
+ * Those three used to be one chained button, because nobody installing an app
+ * wants to know it has a venv. But one button hid a real difference: the
+ * weights are a plain download that works on a machine with no Python at all,
+ * while the engine and the packages are one thing wearing two hats — the
+ * packages *cannot* be installed without the engine, and the engine is shared,
+ * so only one model may be building it at a time.
+ *
+ * So this derives TWO actions, matching the two things a person can actually
+ * reason about: **model files** (fetch the weights) and **setup** (engine plus
+ * this model's packages). Each gets its own button and its own live line, so a
+ * download and an install can run at once and each reports where it is. The
+ * per-step detail survives as `steps`, which only the expanded panel renders.
  */
 import type {
   EnvProgressEvent,
@@ -21,7 +27,7 @@ import type {
   ModelInstallState,
 } from '../../../core/types';
 import type { InstallChain } from '../../stores/modelStore';
-import { PHASE_LABEL, STEP_HELP } from './copy';
+import { ACTION_LABEL, PHASE_LABEL, STEP_HELP } from './copy';
 import { formatGb, gbToBytes } from './formatBytes';
 
 export type StepKey = 'engine' | 'files' | 'extras';
@@ -47,9 +53,9 @@ export interface Fit {
 }
 
 /**
- * The one line shown while an install runs. Whichever leg is in flight, this
- * says the same kind of thing in the same place, so the card never appears to
- * restart from zero three times.
+ * The live line for one half of the install. Both halves use the same shape so
+ * they render through the same component in the same place; only the weights
+ * download has a `transfer` to say bytes, rate and ETA about.
  */
 export interface LiveInstall {
   label: string;
@@ -62,25 +68,35 @@ export interface LiveInstall {
   detail: string | null;
 }
 
-/** What pressing the one primary button does. */
+/** What pressing one of the two buttons does. */
 export type ActionKind = 'install' | 'cancel' | 'retry';
+
+export interface ModelAction {
+  kind: ActionKind;
+  label: string;
+}
 
 export interface ModelState {
   steps: InstallStep[];
   stepsDone: number;
-  /** True when all three are satisfied and the model can actually run. */
+  /** True when every outstanding half is satisfied and the model can run. */
   ready: boolean;
-  /** Some leg of this model's install is in flight. */
+  /** Either half of this model's install is in flight. */
   running: boolean;
-  /** The single live line, or the failure that just happened. */
-  live: LiveInstall | null;
+  /** The weights download: fetch it, stop it, or try again. Null when done. */
+  filesAction: ModelAction | null;
+  /** The engine plus this model's packages, as one action. Null when done. */
+  runtimeAction: ModelAction | null;
+  /** Live line for the weights download, or the failure that just happened. */
+  filesLive: LiveInstall | null;
+  /** Live line for the engine/packages leg, or its failure. */
+  runtimeLive: LiveInstall | null;
   /** The badge on the collapsed row. */
   status: { label: string; variant: 'success' | 'accent' | 'warning' | 'danger' | 'neutral' };
-  /** The single next thing to do, or null when there is nothing left. */
-  action: { kind: ActionKind; label: string } | null;
   /**
-   * The one prerequisite the app genuinely cannot install for you: uv. Null
-   * whenever pressing Install would get somewhere.
+   * Why the setup half cannot start: the one prerequisite the app genuinely
+   * cannot install for you (uv), or another model already holding the engine.
+   * Never set for the weights half — a download contends with nothing.
    */
   blocked: string | null;
   fit: Fit | null;
@@ -131,7 +147,7 @@ export interface DeriveInput {
   envProgress?: EnvProgressEvent | null;
   /** uv is not on PATH, so nothing can be installed until the user fixes it. */
   uvMissing?: boolean;
-  /** The chained install running right now, for any model. */
+  /** The setup run holding the engine right now, for any model. */
   chain?: InstallChain | null;
   vramTotalBytes: number | null;
 }
@@ -148,7 +164,10 @@ export function deriveModelState({
   vramTotalBytes,
 }: DeriveInput): ModelState {
   const needsFiles = model.hfRepo !== '';
-  const needsExtras = model.requirements !== null;
+  // The engine and the packages are one action because they are one thing: the
+  // packages go *into* the engine. A model with no packages of its own asks for
+  // neither — the test shape is pure Python and rides on whatever is there.
+  const needsRuntime = model.requirements !== null;
   const weights = install?.weights ?? 'none';
   const deps = install?.deps ?? 'unknown';
 
@@ -161,38 +180,45 @@ export function deriveModelState({
   // while this model is the one that asked for it.
   const onEngine = mine && chain?.step === 'engine';
 
-  const steps: InstallStep[] = [];
+  const filesDone = !needsFiles || weights === 'complete';
+  const runtimeDone = !needsRuntime || (envReady && deps === 'installed');
+  const filesRunning = Boolean(downloading);
+  const runtimeRunning = Boolean(installing) || onEngine;
+  const filesFailed = failed?.kind === 'weights' ? failed : undefined;
+  const runtimeFailed = failed?.kind === 'deps' ? failed : undefined;
 
-  steps.push({
-    key: 'engine',
-    label: 'Shared setup',
-    status: envReady ? 'done' : envBusy || onEngine ? 'running' : 'todo',
-    state: envReady ? 'Installed' : envBusy || onEngine ? 'Installing…' : 'Not installed',
-    help: STEP_HELP.engine,
-  });
+  // Files first, because that is the order the buttons sit in and the order a
+  // person reads them: get the thing, then make it runnable.
+  const steps: InstallStep[] = [];
 
   if (needsFiles) {
     steps.push({
       key: 'files',
       label: 'Model files',
-      status: weights === 'complete' ? 'done' : downloading ? 'running' : failed?.kind === 'weights' ? 'failed' : 'todo',
-      state:
-        weights === 'complete'
-          ? 'Downloaded'
-          : downloading
-            ? 'Downloading…'
-            : failed?.kind === 'weights'
-              ? weights === 'partial'
-                ? 'Download failed — part of it is on disk'
-                : 'Download failed'
-              : weights === 'partial'
-                ? 'Part downloaded'
-                : `${model.diskGb} GB to download`,
+      status: filesDone ? 'done' : downloading ? 'running' : filesFailed ? 'failed' : 'todo',
+      state: filesDone
+        ? 'Downloaded'
+        : downloading
+          ? 'Downloading…'
+          : filesFailed
+            ? weights === 'partial'
+              ? 'Download failed — part of it is on disk'
+              : 'Download failed'
+            : weights === 'partial'
+              ? 'Part downloaded'
+              : `${model.diskGb} GB to download`,
       help: STEP_HELP.files,
     });
   }
 
-  if (needsExtras) {
+  if (needsRuntime) {
+    steps.push({
+      key: 'engine',
+      label: 'Shared setup',
+      status: envReady ? 'done' : envBusy || onEngine ? 'running' : 'todo',
+      state: envReady ? 'Installed' : envBusy || onEngine ? 'Installing…' : 'Not installed',
+      help: STEP_HELP.engine,
+    });
     steps.push({
       key: 'extras',
       label: 'Finishing touches',
@@ -201,7 +227,7 @@ export function deriveModelState({
           ? 'done'
           : installing
             ? 'running'
-            : failed?.kind === 'deps'
+            : runtimeFailed
               ? 'failed'
               : envReady
                 ? 'todo'
@@ -211,7 +237,7 @@ export function deriveModelState({
           ? 'Installed'
           : installing
             ? 'Installing…'
-            : failed?.kind === 'deps'
+            : runtimeFailed
               ? 'Install failed'
               : envReady
                 ? 'Not installed'
@@ -221,25 +247,15 @@ export function deriveModelState({
   }
 
   const stepsDone = steps.filter((s) => s.status === 'done').length;
-  const ready = stepsDone === steps.length;
-  const running = Boolean(live) || onEngine;
+  const ready = filesDone && runtimeDone;
+  const running = filesRunning || runtimeRunning;
 
-  // One line for the whole chain, whichever leg is actually moving. The engine
-  // leg is the long one and the one nobody expects, so it says out loud that it
-  // happens once and is shared.
-  let liveLine: LiveInstall | null = null;
-  if (onEngine) {
-    const phase = envProgress?.phase ?? 'checking';
-    liveLine = {
-      label: 'Setting up — this part happens once, and every model shares it',
-      pct: envProgress?.pct ?? 0,
-      indeterminate: !envProgress,
-      failed: false,
-      transfer: null,
-      detail: envProgress?.message ?? PHASE_LABEL[phase] ?? null,
-    };
-  } else if (downloading && live) {
-    liveLine = {
+  // Two lines, in two places, because two things can be moving at once: the
+  // weights come over HTTPS while the engine is being built, and a single
+  // merged line would have to pick one and lie about the other.
+  let filesLive: LiveInstall | null = null;
+  if (downloading && live) {
+    filesLive = {
       label: `Downloading ${model.name}`,
       pct: live.pct,
       indeterminate: live.status === 'starting',
@@ -247,19 +263,10 @@ export function deriveModelState({
       transfer: live,
       detail: live.message || null,
     };
-  } else if (installing && live) {
-    liveLine = {
-      label: 'Finishing setup',
-      pct: live.pct,
-      indeterminate: live.status === 'starting',
-      failed: false,
-      transfer: null,
-      detail: live.message || null,
-    };
-  } else if (failed) {
-    liveLine = {
-      label: failed.error ?? 'The last attempt stopped early.',
-      pct: failed.pct,
+  } else if (filesFailed) {
+    filesLive = {
+      label: filesFailed.error ?? 'The download stopped early.',
+      pct: filesFailed.pct,
       indeterminate: false,
       failed: true,
       transfer: null,
@@ -267,31 +274,69 @@ export function deriveModelState({
     };
   }
 
-  // Install chains every outstanding leg, so there is only ever one verb here.
-  let action: ModelState['action'] = null;
-  let blocked: string | null = null;
-
-  if (running) {
-    action = { kind: 'cancel', label: 'Stop' };
-  } else if (uvMissing && !ready) {
-    blocked = 'Local Mesh needs one small helper installed first.';
-  } else if (failed) {
-    action = { kind: 'retry', label: 'Try again' };
-  } else if (!ready) {
-    // Say the download size when there is one: it is the only cost a person
-    // can act on before committing, and it is the question they always ask.
-    const remaining = needsFiles && weights !== 'complete' ? model.diskGb : 0;
-    action = {
-      kind: 'install',
-      label: weights === 'partial' ? 'Resume install' : remaining > 0 ? `Install · ${remaining} GB` : 'Install',
+  // The engine leg is the long one and the one nobody expects, so it says out
+  // loud that it happens once and every model shares it.
+  let runtimeLive: LiveInstall | null = null;
+  if (onEngine) {
+    const phase = envProgress?.phase ?? 'checking';
+    runtimeLive = {
+      label: 'Setting up — this part happens once, and every model shares it',
+      pct: envProgress?.pct ?? 0,
+      indeterminate: !envProgress,
+      failed: false,
+      transfer: null,
+      detail: envProgress?.message ?? PHASE_LABEL[phase] ?? null,
+    };
+  } else if (installing && live) {
+    runtimeLive = {
+      label: `Setting up ${model.name}`,
+      pct: live.pct,
+      indeterminate: live.status === 'starting',
+      failed: false,
+      transfer: null,
+      detail: live.message || null,
+    };
+  } else if (runtimeFailed) {
+    runtimeLive = {
+      label: runtimeFailed.error ?? 'Setup stopped early.',
+      pct: runtimeFailed.pct,
+      indeterminate: false,
+      failed: true,
+      transfer: null,
+      detail: null,
     };
   }
 
-  // Another model's chain holds the venv; pressing Install now would queue
-  // behind it with no sign of why, so say so instead.
-  if (chain && !mine && !ready && !running) {
-    action = null;
-    blocked = 'Another model is installing. This one can go next.';
+  // The weights half answers to nobody: no engine, no uv, no queue behind
+  // another model. The only reason it has no button is that it is finished.
+  let filesAction: ModelAction | null = null;
+  if (filesRunning) {
+    filesAction = { kind: 'cancel', label: ACTION_LABEL.stop };
+  } else if (filesFailed) {
+    filesAction = { kind: 'retry', label: ACTION_LABEL.retry };
+  } else if (!filesDone) {
+    // Say the download size: it is the only cost a person can act on before
+    // committing, and it is the question they always ask.
+    filesAction = {
+      kind: 'install',
+      label: weights === 'partial' ? ACTION_LABEL.resumeFiles : ACTION_LABEL.getFiles(model.diskGb),
+    };
+  }
+
+  let runtimeAction: ModelAction | null = null;
+  let blocked: string | null = null;
+  if (runtimeRunning) {
+    runtimeAction = { kind: 'cancel', label: ACTION_LABEL.stop };
+  } else if (!runtimeDone && uvMissing) {
+    blocked = 'Local Mesh needs one small helper installed first.';
+  } else if (!runtimeDone && chain && !mine) {
+    // Another model is writing to the shared engine; pressing Set up now would
+    // queue behind it with no sign of why, so say so instead.
+    blocked = 'Another model is setting up. This one can go next.';
+  } else if (runtimeFailed) {
+    runtimeAction = { kind: 'retry', label: ACTION_LABEL.retrySetup };
+  } else if (!runtimeDone) {
+    runtimeAction = { kind: 'install', label: ACTION_LABEL.setUp };
   }
 
   const status: ModelState['status'] = running
@@ -300,7 +345,7 @@ export function deriveModelState({
       ? { label: 'Stopped early', variant: 'danger' }
       : ready
         ? { label: 'Ready to use', variant: 'success' }
-        : weights === 'partial' || stepsDone > 1
+        : filesDone || runtimeDone || weights === 'partial'
           ? { label: 'Part installed', variant: 'warning' }
           : { label: 'Not installed', variant: 'neutral' };
 
@@ -309,9 +354,11 @@ export function deriveModelState({
     stepsDone,
     ready,
     running,
-    live: liveLine,
+    filesAction,
+    runtimeAction,
+    filesLive,
+    runtimeLive,
     status,
-    action,
     blocked,
     fit: fitFor(model, vramTotalBytes),
   };
