@@ -1,13 +1,13 @@
 /* ==========================================================================
    Webfonts — self-hosted via @fontsource packages, bundled by Vite.
-   No network needed at runtime; weights match what the UI actually uses.
+   No network needed at runtime. Geist and Geist Mono are variable
+   (one file each covers every weight); Inter stays for the font option.
    ========================================================================== */
+
+@import '@fontsource-variable/geist/index.css';
+@import '@fontsource-variable/geist-mono/index.css';
 
 @import '@fontsource/inter/400.css';
 @import '@fontsource/inter/500.css';
 @import '@fontsource/inter/600.css';
 @import '@fontsource/inter/700.css';
-
-@import '@fontsource/jetbrains-mono/400.css';
-@import '@fontsource/jetbrains-mono/500.css';
-@import '@fontsource/jetbrains-mono/600.css';

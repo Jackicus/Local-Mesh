@@ -64,7 +64,7 @@ export function useThreeScene(containerRef: RefObject<HTMLDivElement | null>): v
     controls.maxPolarAngle = Math.PI * 0.495; // never duck under the floor
     controls.autoRotateSpeed = 1.1;
 
-    const hemisphere = new THREE.HemisphereLight(0xffffff, 0x2a2a2a, 1.15);
+    const hemisphere = new THREE.HemisphereLight(0xffffff, 0x0e1013, 1.15);
     const key = new THREE.DirectionalLight(0xffffff, 1.9);
     key.position.set(3.5, 6, 2.5);
     const fill = new THREE.DirectionalLight(0xffffff, 0.45);

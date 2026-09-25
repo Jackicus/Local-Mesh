@@ -79,10 +79,10 @@
   .app-title {
     font-family: var(--font-mono);
     font-size: 0.786rem;
-    font-weight: 600;
+    font-weight: 500;
     text-transform: uppercase;
-    letter-spacing: 0.09em;
-    color: var(--text-secondary);
+    letter-spacing: 0.14em;
+    color: var(--text-muted);
   }
 
   /* Titlebar buttons take their size from the bar: stretch + aspect-ratio,
@@ -157,7 +157,10 @@
     height: 100%;
     padding-top: var(--topbar-height);
     overflow: hidden;
-    background-color: var(--bg-surface);
+    background-color: var(--bg-dock);
+    /* A hairline where the chrome meets the work — drawn inside the dock so
+       it collapses with it. */
+    box-shadow: inset -1px 0 0 var(--border-subtle);
     transition: width var(--transition-base);
     will-change: width;
   }
@@ -187,8 +190,8 @@
   .left-dock-nav {
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    padding: 8px 6px;
+    gap: 2px;
+    padding: 8px;
     flex: 1;
     overflow-y: auto;
     overflow-x: hidden;
@@ -199,11 +202,11 @@
     align-items: center;
     justify-content: flex-start;
     width: 100%;
-    height: 38px;
-    min-height: 38px;
+    height: 36px;
+    min-height: 36px;
     padding: 0;
     border-radius: var(--radius-md);
-    color: var(--text-secondary);
+    color: var(--text-muted);
     font-size: 0.929rem;
     font-weight: 500;
     text-align: left;
@@ -216,26 +219,33 @@
   }
 
   .dock-item:hover {
-    background-color: var(--bg-surface-hover);
+    background-color: oklch(from var(--text-primary) l c h / 0.05);
     color: var(--text-primary);
   }
 
-  /* Selected entry stays in the neutral text ramp; the index tick alone carries the accent */
+  /* Selected entry stays in the neutral text ramp; the icon and the index
+     tick alone carry the accent */
   .dock-item.active {
-    background-color: var(--bg-surface-active);
+    background-color: oklch(from var(--text-primary) l c h / 0.07);
+    box-shadow: var(--edge-light);
     color: var(--text-primary);
     font-weight: 600;
+  }
+
+  .dock-item.active .dock-item-icon {
+    color: var(--accent);
   }
 
   .dock-item.active::before {
     content: '';
     position: absolute;
     left: 0;
-    top: 9px;
-    bottom: 9px;
-    width: 2px;
-    border-radius: 1px;
+    top: 10px;
+    bottom: 10px;
+    width: 3px;
+    border-radius: 0 2px 2px 0;
     background-color: var(--accent);
+    box-shadow: 0 0 10px var(--accent-line);
   }
 
   .dock-item-icon {
@@ -245,7 +255,7 @@
     width: 44px;
     min-width: 44px;
     max-width: 44px;
-    height: 38px;
+    height: 36px;
     flex-shrink: 0;
   }
 
@@ -280,11 +290,11 @@
   }
 
   .left-dock-footer {
-    padding: 8px 6px;
+    padding: 8px;
     border-top: 1px solid var(--border-subtle);
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 2px;
     overflow: hidden;
   }
 
@@ -424,10 +434,10 @@
     min-height: 0;
     /* Never slides under the titlebar, however short the window is */
     max-height: calc(100vh - var(--topbar-height));
-    background-color: color-mix(in oklab, var(--bg-surface) 94%, transparent);
-    backdrop-filter: blur(12px);
+    background-color: oklch(from var(--bg-dock) l c h / 0.94);
+    backdrop-filter: var(--plate-blur);
     border-top: 1px solid var(--border-subtle);
-    box-shadow: 0 -8px 28px oklch(0% 0 0 / 0.18);
+    box-shadow: 0 -12px 32px oklch(0 0 0 / 0.25);
     transition: left var(--transition-base);
     /* Mounted on open, so it arrives rather than growing out of a strip */
     animation: bottom-dock-in var(--transition-base) both;

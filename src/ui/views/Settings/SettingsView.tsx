@@ -121,7 +121,7 @@ export const SettingsView: React.FC = () => {
                     title={accent.name}
                     aria-label={accent.name}
                   >
-                    {isSelected && <CheckIcon size={14} color="#ffffff" strokeWidth={3} />}
+                    {isSelected && <CheckIcon size={14} color="var(--accent-text)" strokeWidth={3} />}
                   </button>
                 );
               })}

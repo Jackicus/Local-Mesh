@@ -21,13 +21,14 @@
     gap: 10px;
   }
 
-  /* Annotation voice: screen titles are set in the mono face */
+  /* Screen titles: the sans at display size, set tight. The mono stays the
+     annotation voice for labels and readouts. */
   .view-title {
-    font-family: var(--font-mono);
-    font-size: 1.357rem;
+    font-size: 1.714rem;
     font-weight: 600;
     color: var(--text-primary);
-    letter-spacing: -0.02em;
+    letter-spacing: -0.025em;
+    line-height: 1.15;
     text-wrap: balance;
   }
 
@@ -221,19 +222,18 @@
     justify-content: center;
     cursor: pointer;
     transition: transform var(--transition-fast), box-shadow var(--transition-fast), border-color var(--transition-fast);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+    border-radius: 50%;
+    box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.25), var(--shadow-sm);
     position: relative;
   }
 
   .accent-square-btn:hover {
-    transform: scale(1.1);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+    transform: scale(1.08);
   }
 
   .accent-square-btn.selected {
-    border-color: #ffffff;
     outline: 2px solid var(--accent);
-    outline-offset: 2px;
+    outline-offset: 3px;
   }
 
   /* --------------------------------------------------------------------------

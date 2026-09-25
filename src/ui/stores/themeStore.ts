@@ -1,8 +1,8 @@
 import { useSyncExternalStore } from 'react';
 
 export type ThemeMode = 'system' | 'light' | 'dark';
-export type AccentColor = 'blue' | 'emerald' | 'violet' | 'rose' | 'amber';
-export type FontFamily = 'system' | 'inter' | 'mono';
+export type AccentColor = 'glacier' | 'blue' | 'emerald' | 'violet' | 'rose' | 'amber';
+export type FontFamily = 'geist' | 'system' | 'inter' | 'mono';
 export type FontSize = 'sm' | 'md' | 'lg';
 
 export interface AccentOption {
@@ -14,11 +14,12 @@ export interface AccentOption {
 // Values mirror the [data-accent] tokens in variables.css; hover/subtle
 // shades derive from the accent in CSS, so one value per entry is enough
 export const AVAILABLE_ACCENTS: AccentOption[] = [
-  { id: 'blue', name: 'Indigo (Default)', color: '#6366f1' },
-  { id: 'emerald', name: 'Emerald', color: '#10b981' },
-  { id: 'violet', name: 'Violet', color: '#8b5cf6' },
-  { id: 'rose', name: 'Rose', color: '#f43f5e' },
-  { id: 'amber', name: 'Amber', color: '#f59e0b' },
+  { id: 'glacier', name: 'Glacier (Default)', color: 'oklch(0.8 0.115 212)' },
+  { id: 'blue', name: 'Periwinkle', color: 'oklch(0.74 0.135 272)' },
+  { id: 'emerald', name: 'Emerald', color: 'oklch(0.8 0.14 165)' },
+  { id: 'violet', name: 'Violet', color: 'oklch(0.74 0.15 300)' },
+  { id: 'rose', name: 'Rose', color: 'oklch(0.74 0.15 10)' },
+  { id: 'amber', name: 'Amber', color: 'oklch(0.82 0.13 70)' },
 ];
 
 export interface ThemeState {
@@ -58,17 +59,17 @@ function getInitialAccent(): AccentColor {
       return saved;
     }
   } catch {}
-  return 'blue';
+  return 'glacier';
 }
 
 function getInitialFont(): FontFamily {
   try {
     const saved = localStorage.getItem(STORAGE_KEY_FONT) as FontFamily;
-    if (saved === 'system' || saved === 'inter' || saved === 'mono') {
+    if (saved === 'geist' || saved === 'system' || saved === 'inter' || saved === 'mono') {
       return saved;
     }
   } catch {}
-  return 'system';
+  return 'geist';
 }
 
 function getInitialFontSize(): FontSize {
@@ -175,12 +176,12 @@ export const themeStore = {
   setFontSize: (fontSize: FontSize) => updateTheme({ fontSize }),
 
   reset: () => {
-    const effective = applyDOMTheme('system', 'blue', 'system', 'md');
+    const effective = applyDOMTheme('system', 'glacier', 'geist', 'md');
     state = {
       mode: 'system',
       effectiveTheme: effective,
-      accent: 'blue',
-      fontFamily: 'system',
+      accent: 'glacier',
+      fontFamily: 'geist',
       fontSize: 'md',
     };
     try {

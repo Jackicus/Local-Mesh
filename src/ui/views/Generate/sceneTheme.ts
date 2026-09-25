@@ -53,10 +53,10 @@ function token(name: string, fallback: string): THREE.Color {
 
 export function readSceneColors(): SceneColors {
   return {
-    background: token('--bg-app', '#2a2a2a'),
-    accent: token('--accent', '#6366f1'),
-    gridFine: token('--border-subtle', '#484848'),
-    gridMajor: token('--border-strong', '#5a5a5a'),
+    background: token('--bg-app', '#0e1013'),
+    accent: token('--accent', '#56c8e0'),
+    gridFine: token('--border-subtle', '#24262b'),
+    gridMajor: token('--border-strong', '#373a40'),
   };
 }
 

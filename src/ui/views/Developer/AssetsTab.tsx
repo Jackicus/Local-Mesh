@@ -23,7 +23,7 @@ export const AssetsTab: React.FC = () => {
         items={[
           { name: 'styles/', note: 'six stylesheets, one per cascade layer (reset → overlays); tokens in variables.css' },
           { name: 'icons/', note: `${iconEntries.length} semantic icons in the catalog, re-exported from lucide-react` },
-          { name: 'fonts/', note: 'Inter + JetBrains Mono, self-hosted via @fontsource — no network at runtime' },
+          { name: 'fonts/', note: 'Geist + Geist Mono (Inter as an option), self-hosted via @fontsource — no network at runtime' },
           { name: 'images/', note: 'empty so far — images import as Vite modules when added' },
         ]}
       />

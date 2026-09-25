@@ -16,7 +16,8 @@
     gap: 8px;
     font-weight: 500;
     border-radius: var(--radius-md);
-    transition: transform var(--transition-fast), background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+    border: 1px solid transparent;
+    transition: transform var(--transition-fast), background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast), box-shadow var(--transition-fast);
     white-space: nowrap;
     text-box: trim-both cap alphabetic;
   }
@@ -80,10 +81,13 @@
     padding: 6px;
   }
 
+  /* Filled buttons are lit from above: a top highlight and a soft drop, so
+     they sit on the surface rather than being printed on it. */
   .btn-primary {
     background-color: var(--accent);
-    color: var(--accent-text, #ffffff);
+    color: var(--accent-text);
     font-weight: 600;
+    box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.22), var(--shadow-sm);
   }
 
   .btn-primary:hover:not(:disabled) {
@@ -92,12 +96,13 @@
 
   .btn-secondary {
     background-color: var(--bg-surface-hover);
-    border: 1px solid var(--border-strong);
+    border-color: var(--border-strong);
     color: var(--text-primary);
+    box-shadow: var(--edge-light), var(--shadow-sm);
   }
 
   .btn-secondary:hover:not(:disabled) {
-    background-color: var(--border-strong);
+    background-color: var(--bg-surface-active);
   }
 
   .btn-subtle {
@@ -113,12 +118,13 @@
   .btn-danger {
     background-color: var(--danger-subtle);
     color: var(--danger);
-    border: 1px solid oklch(from var(--danger) l c h / 25%);
+    border-color: oklch(from var(--danger) l c h / 25%);
   }
 
   .btn-danger:hover:not(:disabled) {
     background-color: var(--danger);
-    color: #ffffff;
+    border-color: var(--danger);
+    color: var(--bg-app);
   }
 
   .btn-icon {
@@ -134,16 +140,12 @@
     background-color: var(--bg-block);
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-lg);
+    box-shadow: var(--edge-light);
     padding: 20px;
     display: flex;
     flex-direction: column;
     gap: 14px;
     container: card / inline-size;
-    transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
-  }
-
-  .ui-card:hover {
-    border-color: var(--border-strong);
   }
 
   .ui-card-header {
@@ -179,6 +181,7 @@
   .ui-card-title {
     font-size: 1.071rem;
     font-weight: 600;
+    letter-spacing: -0.01em;
     color: var(--text-primary);
     text-wrap: balance;
   }
@@ -239,45 +242,45 @@
     align-items: center;
     gap: 6px;
     width: fit-content;
-    padding: 4px 8px;
+    padding: 4px 7px;
     border-radius: var(--radius-sm);
     border: 1px solid;
     font-family: var(--font-mono);
-    font-size: 0.714rem;
-    font-weight: 600;
+    font-size: 0.679rem;
+    font-weight: 500;
     text-transform: uppercase;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.07em;
     text-box: trim-both cap alphabetic;
   }
 
   .ui-badge-accent {
     background-color: var(--accent-subtle);
     color: var(--accent);
-    border-color: oklch(from var(--accent) l c h / 0.35);
+    border-color: oklch(from var(--accent) l c h / 0.28);
   }
 
   .ui-badge-neutral {
-    background-color: var(--bg-surface-hover);
+    background-color: oklch(from var(--text-primary) l c h / 0.05);
     color: var(--text-secondary);
-    border-color: var(--border-subtle);
+    border-color: oklch(from var(--text-primary) l c h / 0.08);
   }
 
   .ui-badge-success {
     background-color: var(--success-subtle);
     color: var(--success);
-    border-color: oklch(from var(--success) l c h / 0.35);
+    border-color: oklch(from var(--success) l c h / 0.28);
   }
 
   .ui-badge-warning {
     background-color: var(--warning-subtle);
     color: var(--warning);
-    border-color: oklch(from var(--warning) l c h / 0.35);
+    border-color: oklch(from var(--warning) l c h / 0.28);
   }
 
   .ui-badge-danger {
     background-color: var(--danger-subtle);
     color: var(--danger);
-    border-color: oklch(from var(--danger) l c h / 0.35);
+    border-color: oklch(from var(--danger) l c h / 0.28);
   }
 
   .ui-badge-icon {
@@ -296,7 +299,7 @@
     font-size: 0.786rem;
     font-family: var(--font-mono);
     color: var(--text-primary);
-    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.2);
+    box-shadow: inset 0 -1px 0 var(--border-strong);
     text-box: trim-both cap alphabetic;
   }
 
@@ -432,10 +435,15 @@
   }
 
   .ui-segmented-item.selected {
-    background-color: var(--bg-surface);
+    background-color: var(--bg-surface-hover);
     color: var(--text-primary);
     font-weight: 600;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+    box-shadow: var(--edge-light), var(--shadow-sm);
+    border-color: var(--border-strong);
+  }
+
+  [data-theme="light"] .ui-segmented-item.selected {
+    background-color: var(--bg-surface);
     border-color: var(--border-subtle);
   }
 
@@ -480,15 +488,20 @@
   .ui-toggle-thumb {
     width: 18px;
     height: 18px;
-    background-color: #ffffff;
+    background-color: oklch(0.98 0 0);
     border-radius: 50%;
     transition: transform var(--transition-base);
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 1px 3px oklch(0 0 0 / 0.35);
     display: block;
   }
 
   .ui-toggle.checked .ui-toggle-thumb {
     transform: translateX(18px);
+    background-color: var(--accent-text);
+  }
+
+  [data-theme="light"] .ui-toggle.checked .ui-toggle-thumb {
+    background-color: oklch(1 0 0);
   }
 
   .ui-toggle-sm {
@@ -519,6 +532,8 @@
   .ui-select-wrapper,
   .ui-slider-wrapper {
     width: var(--form-control-width, 280px);
+    /* Recessed into whatever they sit on */
+    --field-bg: oklch(from var(--bg-app) calc(l - 0.01) c h);
     min-width: var(--form-control-width, 280px);
     max-width: 100%;
   }
@@ -528,7 +543,7 @@
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    background-color: var(--bg-app);
+    background-color: var(--field-bg);
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-md);
     padding: 0 10px;
@@ -538,7 +553,7 @@
 
   .ui-input-wrapper:focus-within {
     border-color: var(--accent);
-    box-shadow: 0 0 0 1px var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-subtle);
   }
 
   .ui-input-wrapper:has(.ui-input-field:user-invalid) {
@@ -586,7 +601,7 @@
     position: relative;
     display: inline-flex;
     align-items: center;
-    background-color: var(--bg-app);
+    background-color: var(--field-bg);
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-md);
     transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
@@ -594,7 +609,7 @@
 
   .ui-select-wrapper:focus-within {
     border-color: var(--accent);
-    box-shadow: 0 0 0 1px var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-subtle);
   }
 
   .ui-select-field {
@@ -685,7 +700,7 @@
   .ui-checkbox-custom.checked {
     background-color: var(--accent);
     border-color: var(--accent);
-    color: var(--accent-text, #ffffff);
+    color: var(--accent-text);
   }
 
   .ui-checkbox-text {
