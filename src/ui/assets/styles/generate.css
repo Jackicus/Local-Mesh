@@ -36,11 +36,11 @@
     --gen-s4: 12px;
     --gen-inset: var(--gen-s4);
 
-    --gen-plate-bg: color-mix(in oklab, var(--bg-surface) 92%, transparent);
-    --gen-plate-shadow: 0 8px 28px oklch(0% 0 0 / 0.22);
+    --gen-plate-bg: var(--plate-bg);
+    --gen-plate-shadow: var(--edge-light), var(--shadow-lg);
     /* Set into a plate rather than onto it: a step down from the plate's own
        ground in both themes. */
-    --gen-inset-bg: color-mix(in oklab, var(--bg-app) 60%, transparent);
+    --gen-inset-bg: oklch(from var(--bg-app) l c h / 0.6);
 
     --gen-queue-width: 620px;
     --gen-panel-w: 236px;
@@ -60,9 +60,16 @@
     overflow: hidden;
   }
 
+  /* The lightbox: the renderer is transparent, and the model sits in a soft
+     pool of light that falls away to the ground colour at the edges — the
+     studio sweep a sculpture is photographed on, and the one place in the app
+     the ground is not flat. The grid fades into the same --bg-app. */
   .gen-canvas {
     position: absolute;
     inset: 0;
+    background:
+      radial-gradient(ellipse 60% 55% at 58% 48%, var(--scene-glow), transparent 100%),
+      var(--bg-app);
   }
 
   .gen-canvas canvas {
@@ -84,8 +91,8 @@
   .gen-navigator,
   .gen-viewopts-panel {
     background-color: var(--gen-plate-bg);
-    backdrop-filter: blur(12px);
-    border: 1px solid var(--border-subtle);
+    backdrop-filter: var(--plate-blur);
+    border: 1px solid var(--plate-border);
     box-shadow: var(--gen-plate-shadow);
   }
 
@@ -227,9 +234,10 @@
     margin-top: var(--gen-s4);
     padding: 7px var(--gen-s4);
     border-radius: var(--radius-md);
-    border: 1px solid var(--border-strong);
+    border: 1px solid var(--plate-border);
     background-color: var(--gen-plate-bg);
-    backdrop-filter: blur(12px);
+    backdrop-filter: var(--plate-blur);
+    box-shadow: var(--gen-plate-shadow);
     font-size: 0.857rem;
     color: var(--text-secondary);
     transition: border-color var(--transition-fast), color var(--transition-fast),
@@ -361,9 +369,24 @@
   }
 
   .gen-gizmo-spokes line {
-    stroke: var(--border-strong);
+    stroke: var(--axis);
+    stroke-opacity: 0.7;
     stroke-width: 1.5;
     stroke-linecap: round;
+  }
+
+  /* Each axis in its DCC colour — the same red and blue the floor grid draws
+     its X and Z axes in — so the dial and the scene name directions alike. */
+  [data-axis='x'] {
+    --axis: var(--axis-x);
+  }
+
+  [data-axis='y'] {
+    --axis: var(--axis-y);
+  }
+
+  [data-axis='z'] {
+    --axis: var(--axis-z);
   }
 
   /* transform and opacity are written per frame from the camera pose, so
@@ -387,21 +410,21 @@
   .gen-gizmo-axis.is-positive {
     width: 21px;
     height: 21px;
-    background-color: var(--bg-surface-active);
-    border: 1px solid var(--border-strong);
-    color: var(--text-secondary);
+    background-color: var(--axis);
+    border: 1px solid oklch(from var(--axis) calc(l + 0.08) c h);
+    color: oklch(0.16 0.01 265);
   }
 
   .gen-gizmo-axis.is-negative {
     width: 11px;
     height: 11px;
-    border: 1.5px solid var(--border-strong);
+    border: 1.5px solid oklch(from var(--axis) l c h / 0.55);
   }
 
   .gen-gizmo-axis:hover:not(:disabled) {
-    background-color: var(--accent);
-    border-color: var(--accent);
-    color: var(--accent-text);
+    background-color: oklch(from var(--axis) calc(l + 0.08) c h);
+    border-color: var(--text-primary);
+    color: oklch(0.16 0.01 265);
   }
 
   .gen-gizmo-axis:disabled {
@@ -581,8 +604,9 @@
      on. Said once, in the accent, on whichever row it is. */
   .gen-row.is-selected,
   .gen-done.is-selected {
-    border-color: color-mix(in oklab, var(--accent) 60%, transparent);
+    border-color: var(--accent-line);
     background-color: var(--accent-subtle);
+    box-shadow: inset 3px 0 0 var(--accent);
   }
 
   /* Clicking the mesh in the viewport lands here. */
@@ -1103,7 +1127,7 @@
     position: fixed;
     background-color: var(--bg-surface);
     border: 1px solid var(--border-strong);
-    box-shadow: var(--gen-plate-shadow);
+    box-shadow: var(--edge-light), var(--shadow-lg);
     z-index: var(--z-tooltip);
     display: flex;
     flex-direction: column;
@@ -1349,6 +1373,7 @@
     border-radius: var(--radius-md);
     border-color: var(--accent);
     background-color: var(--accent);
+    box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.25), 0 6px 20px var(--accent-subtle), var(--shadow-md);
     color: var(--accent-text);
     font-family: var(--font-mono);
     font-size: 0.688rem;
@@ -1369,7 +1394,8 @@
 
   .gen-start:disabled {
     background-color: var(--gen-plate-bg);
-    border-color: var(--border-subtle);
+    border-color: var(--plate-border);
+    box-shadow: var(--gen-plate-shadow);
     color: var(--text-muted);
     cursor: not-allowed;
   }

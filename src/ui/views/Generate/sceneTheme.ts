@@ -2,14 +2,17 @@ import * as THREE from 'three';
 
 /**
  * The scene takes its palette from the page tokens so the viewport is the
- * same sheet as the rest of the app: background = --bg-app, the whole drafting
- * grid in neutral --border-* (major lines one step stronger than fine ones),
- * and the accent reserved for the two axes. Colours are resolved at runtime
+ * same sheet as the rest of the app: background = --bg-app (the canvas is
+ * transparent; the page paints the lightbox behind it), the drafting grid in
+ * neutral --border-* (major lines one step stronger than fine ones), and the
+ * two floor axes in --axis-x / --axis-z, the colours the camera dial uses. Colours are resolved at runtime
  * (tokens may be hex or oklch) and re-read on theme changes.
  */
 export interface SceneColors {
   background: THREE.Color;
   accent: THREE.Color;
+  axisX: THREE.Color;
+  axisZ: THREE.Color;
   /** Fine 1-unit lines. */
   gridFine: THREE.Color;
   /** Major 5-unit lines — same neutral family, a step stronger. */
@@ -55,6 +58,8 @@ export function readSceneColors(): SceneColors {
   return {
     background: token('--bg-app', '#0e1013'),
     accent: token('--accent', '#56c8e0'),
+    axisX: token('--axis-x', '#d9535a'),
+    axisZ: token('--axis-z', '#4c8fe0'),
     gridFine: token('--border-subtle', '#24262b'),
     gridMajor: token('--border-strong', '#373a40'),
   };

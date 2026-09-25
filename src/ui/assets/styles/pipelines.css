@@ -22,20 +22,19 @@
 
     --pipe-inset: 12px;
     --pipe-dock-width: 340px;
-    --pipe-plate-bg: color-mix(in oklab, var(--bg-surface) 92%, transparent);
-    --pipe-image: oklch(0.78 0.11 220);
-    --pipe-mesh: oklch(0.78 0.12 55);
-    --pipe-grid-dot: oklch(from var(--text-muted) l c h / 0.5);
-    --pipe-node-shadow: 0 2px 10px rgb(0 0 0 / 0.22);
-    --pipe-node-shadow-lifted: 0 8px 22px rgb(0 0 0 / 0.3);
+    --pipe-plate-bg: var(--plate-bg);
+    /* Lilac and apricot: clear of the default accent, and of each other */
+    --pipe-image: oklch(0.76 0.12 305);
+    --pipe-mesh: oklch(0.8 0.12 62);
+    --pipe-grid-dot: oklch(from var(--text-muted) l c h / 0.35);
+    --pipe-node-shadow: var(--edge-light), var(--shadow-md);
+    --pipe-node-shadow-lifted: var(--edge-light), var(--shadow-lg);
   }
 
   [data-theme='light'] .pipe-view {
-    --pipe-image: oklch(0.58 0.13 230);
+    --pipe-image: oklch(0.55 0.16 305);
     --pipe-mesh: oklch(0.62 0.15 48);
-    --pipe-grid-dot: oklch(from var(--text-muted) l c h / 0.45);
-    --pipe-node-shadow: 0 1px 3px rgb(0 0 0 / 0.1);
-    --pipe-node-shadow-lifted: 0 6px 18px rgb(0 0 0 / 0.14);
+    --pipe-grid-dot: oklch(from var(--text-muted) l c h / 0.4);
   }
 
   /* --------------------------------------------------------------------------
@@ -46,9 +45,9 @@
   .pipe-validation,
   .pipe-dock-open {
     background-color: var(--pipe-plate-bg);
-    backdrop-filter: blur(12px);
-    border: 1px solid var(--border-subtle);
-    box-shadow: 0 8px 28px oklch(0% 0 0 / 0.22);
+    backdrop-filter: var(--plate-blur);
+    border: 1px solid var(--plate-border);
+    box-shadow: var(--edge-light), var(--shadow-lg);
   }
 
   .pipe-dock-title,

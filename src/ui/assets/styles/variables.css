@@ -49,6 +49,14 @@
     --edge-light: inset 0 1px 0 oklch(1 0 0 / 0.05);
     --scrim: oklch(0.08 0.005 265 / 0.72);
 
+    /* The 3D viewport's own vocabulary: axis colours as every DCC package
+       draws them (read by sceneTheme.ts for the floor grid, and by the dial),
+       and the pool of light the model sits in. */
+    --axis-x: oklch(0.66 0.17 22);
+    --axis-y: oklch(0.8 0.17 135);
+    --axis-z: oklch(0.66 0.15 255);
+    --scene-glow: oklch(0.215 0.01 250);
+
     /* Floating plates over the viewport and canvas: smoked glass */
     --plate-bg: oklch(from var(--bg-surface) l c h / 0.82);
     --plate-border: oklch(1 0 0 / 0.08);
@@ -127,6 +135,11 @@
     --shadow-lg: 0 16px 40px oklch(0.2 0.02 265 / 0.14), 0 2px 8px oklch(0.2 0.02 265 / 0.06);
     --edge-light: inset 0 1px 0 oklch(1 0 0 / 0.6);
     --scrim: oklch(0.2 0.01 265 / 0.35);
+
+    --axis-x: oklch(0.6 0.19 25);
+    --axis-y: oklch(0.62 0.17 140);
+    --axis-z: oklch(0.56 0.17 258);
+    --scene-glow: oklch(1 0 0);
 
     --plate-bg: oklch(1 0 0 / 0.8);
     --plate-border: oklch(0.2 0.02 265 / 0.1);

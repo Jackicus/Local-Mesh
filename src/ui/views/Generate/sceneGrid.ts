@@ -4,7 +4,7 @@ import type { SceneColors } from './sceneTheme';
 /**
  * The drafting grid: 1-unit cells across 40×40, a slightly stronger line every
  * 5 units, and the two axes through the origin — the only coloured lines in the
- * scene. The three layers never share a line (fine skips multiples of 5, major
+ * scene, red for X and blue for Z as in every DCC package, matching the dial. The three layers never share a line (fine skips multiples of 5, major
  * skips 0), so nothing z-fights. Instead of transparency the lines are mixed
  * toward the background per vertex — a radial fade that holds still while the
  * camera moves, which fog would not.
@@ -26,18 +26,21 @@ function layerOf(coord: number): Layer {
   return coord % MAJOR_EVERY === 0 ? 'major' : 'fine';
 }
 
+type Base = Layer | 'axisZ';
+
 /**
- * One base colour per layer, all three re-derived whenever the theme or accent
- * changes. Fine and major are neutral (--border-subtle / --border-strong, each
- * of which sits on the readable side of --bg-app in both themes); only the axes
- * carry the accent.
+ * One base colour per layer, all re-derived whenever the theme changes. Fine
+ * and major are neutral (--border-subtle / --border-strong, each of which sits
+ * on the readable side of --bg-app in both themes); the two axes take the
+ * --axis-x / --axis-z tokens.
  */
-function layerBases(colors: SceneColors): Record<Layer, THREE.Color> {
+function layerBases(colors: SceneColors): Record<Base, THREE.Color> {
   const bg = colors.background;
   return {
     fine: bg.clone().lerp(colors.gridFine, FINE_MIX),
     major: bg.clone().lerp(colors.gridMajor, MAJOR_MIX),
-    axis: bg.clone().lerp(colors.accent, AXIS_MIX),
+    axis: bg.clone().lerp(colors.axisX, AXIS_MIX),
+    axisZ: bg.clone().lerp(colors.axisZ, AXIS_MIX),
   };
 }
 
@@ -95,10 +98,12 @@ export function buildGrid(colors: SceneColors): THREE.Group {
   for (let c = -HALF; c <= HALF; c += 1) {
     const layer = layerOf(c);
     const buf = buffers[layer];
+    // At c = 0 the line along x is the X axis and the line along z the Z axis.
+    const alongZ = layer === 'axis' ? base.axisZ : base[layer];
     // One unit at a time so the per-vertex fade stays radial along the line.
     for (let s = -HALF; s < HALF; s += 1) {
       pushSegment(buf, s, c, s + 1, c, base[layer], bg, scratch); // along x
-      pushSegment(buf, c, s, c, s + 1, base[layer], bg, scratch); // along z
+      pushSegment(buf, c, s, c, s + 1, alongZ, bg, scratch); // along z
     }
   }
 

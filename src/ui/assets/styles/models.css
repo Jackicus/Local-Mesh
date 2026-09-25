@@ -370,6 +370,7 @@
     background-color: var(--bg-block);
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-lg);
+    box-shadow: var(--edge-light);
     overflow: hidden;
   }
 
@@ -438,6 +439,7 @@
   .models-row-name {
     font-size: 1rem;
     font-weight: 600;
+    letter-spacing: -0.01em;
     color: var(--text-primary);
   }
 
@@ -500,6 +502,22 @@
     min-width: auto;
   }
 
+  /* A list of eight models is eight calls to action; filled, they shout over
+     each other. In the list they are tonal — accent ink on an accent wash —
+     and fill only under the pointer. */
+  .models-actions .btn-primary {
+    background-color: var(--accent-subtle);
+    border-color: oklch(from var(--accent) l c h / 0.3);
+    color: var(--accent);
+    box-shadow: none;
+  }
+
+  .models-actions .btn-primary:hover:not(:disabled) {
+    background-color: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-text);
+  }
+
   .models-row > .models-transfer,
   .models-row > .models-blocked {
     margin: 0 16px 14px;
@@ -516,7 +534,7 @@
     flex-direction: column;
     gap: 14px;
     padding: 16px;
-    background-color: var(--bg-app);
+    background-color: oklch(from var(--bg-app) l c h / 0.6);
     border-top: 1px solid var(--border-subtle);
   }
 

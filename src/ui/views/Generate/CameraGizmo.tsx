@@ -89,6 +89,7 @@ export const CameraGizmo: React.FC = () => {
         {AXES.filter((a) => a.positive).map((axis) => (
           <line
             key={axis.id}
+            data-axis={axis.letter.toLowerCase()}
             ref={(el) => {
               spokeRefs.current[axis.id] = el;
             }}
@@ -108,6 +109,7 @@ export const CameraGizmo: React.FC = () => {
             handleRefs.current[axis.id] = el;
           }}
           className={`gen-gizmo-axis ${axis.positive ? 'is-positive' : 'is-negative'}`}
+          data-axis={axis.letter.toLowerCase()}
           title={axis.label}
           aria-label={axis.label}
           disabled={axis.unreachable}

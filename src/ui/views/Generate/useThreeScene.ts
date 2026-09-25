@@ -46,7 +46,13 @@ export function useThreeScene(containerRef: RefObject<HTMLDivElement | null>): v
     const container = containerRef.current;
     if (!container) return;
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    const renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      alpha: true,
+      powerPreference: 'high-performance',
+    });
+    // Transparent: .gen-canvas paints the lightbox gradient behind the scene.
+    renderer.setClearColor(0x000000, 0);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -118,7 +124,6 @@ export function useThreeScene(containerRef: RefObject<HTMLDivElement | null>): v
 
     const applyTheme = () => {
       const colors = readSceneColors();
-      scene.background = colors.background;
       // Only bites well past the grid's own fade, so distant geometry melts
       // into the same sheet the rest of the app is painted on.
       scene.fog = new THREE.Fog(colors.background, 16, 46);
