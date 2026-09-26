@@ -21,7 +21,9 @@ export const ViewContainer: React.FC = () => {
     case 'models':
       return <ModelsView />;
     case 'developer':
-      return <DeveloperView />;
+      // Dev only: the view edits src/ui/*/CLAUDE.md through handlers main
+      // registers solely under the Vite dev server.
+      return import.meta.env.DEV ? <DeveloperView /> : <GenerateView />;
     case 'settings':
       return <SettingsView />;
     case 'help':

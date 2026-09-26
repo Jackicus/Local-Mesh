@@ -19,6 +19,8 @@ interface NavItem {
   icon: IconComponent;
   /** Hidden until the user has made a mesh, or turned advanced tools on. */
   advanced?: boolean;
+  /** Only in `npm run dev`: the view edits source files that a built app does not ship. */
+  devOnly?: boolean;
 }
 
 // Models before Pipelines: installing one is the thing a new user has to do
@@ -32,10 +34,13 @@ const MAIN_NAV_ITEMS: NavItem[] = [
 const FOOTER_NAV_ITEMS: NavItem[] = [
   // Not a view: toggles the bottom dock.
   { id: 'logs', label: 'Logs', icon: ScrollTextIcon },
-  { id: 'developer', label: 'Developer', icon: CodeIcon },
+  { id: 'developer', label: 'Developer', icon: CodeIcon, devOnly: true },
   { id: 'help', label: 'Help', icon: HelpIcon },
   { id: 'settings', label: 'Settings', icon: SettingsIcon },
 ];
+
+const showItem = (item: NavItem, advanced: boolean): boolean =>
+  (!item.advanced || advanced) && (!item.devOnly || import.meta.env.DEV);
 
 export const LeftDock: React.FC = () => {
   const [dockState, store] = useDockStore();
@@ -137,12 +142,12 @@ export const LeftDock: React.FC = () => {
       {/* Fixed width so the content doesn't reflow while the dock animates closed */}
       <div className="left-dock-inner" style={{ width: `${dockState.width}px` }}>
         <nav className="left-dock-nav">
-          {MAIN_NAV_ITEMS.filter((item) => !item.advanced || dockState.advanced).map(renderNavItem)}
+          {MAIN_NAV_ITEMS.filter((item) => showItem(item, dockState.advanced)).map(renderNavItem)}
         </nav>
 
         <div className="left-dock-footer">
           <EngineItem />
-          {FOOTER_NAV_ITEMS.map(renderNavItem)}
+          {FOOTER_NAV_ITEMS.filter((item) => showItem(item, dockState.advanced)).map(renderNavItem)}
         </div>
       </div>
 
