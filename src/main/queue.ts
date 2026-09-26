@@ -18,6 +18,7 @@ import {
   newId,
   normalizeDraft,
   normalizeMeshOp,
+  resolveLowVram,
   validatePipeline,
   withModifiers,
 } from '../core/types';
@@ -319,13 +320,17 @@ async function loadInternal(instance: WorkerProcess, modelId: string): Promise<v
   if (state.loadedModelId && state.loadedModelId !== modelId) await unloadInternal(instance);
 
   const settings = getSettings();
+  // The worker reported the card's size on `ready`, which is before any load;
+  // null here means CPU-only, and auto then plays it safe.
+  const lowVram = resolveLowVram(settings.lowVram, model.vramGb, state.memory.vramTotalBytes);
   state.worker = 'loading';
   state.loadingModelId = modelId;
   state.device = settings.device;
   state.precision = settings.precision;
   broadcast(true);
   glog.info(
-    `loading ${modelId} (device ${settings.device}, precision ${settings.precision}, low-vram ${settings.lowVram})`
+    `loading ${modelId} (device ${settings.device}, precision ${settings.precision}, ` +
+      `low-vram ${lowVram ? 'on' : 'off'}${settings.lowVram === 'auto' ? ' by auto' : ''})`
   );
 
   try {
@@ -335,7 +340,7 @@ async function loadInternal(instance: WorkerProcess, modelId: string): Promise<v
       model_dir: modelDir(modelId),
       device: settings.device,
       precision: settings.precision,
-      low_vram: settings.lowVram,
+      low_vram: lowVram,
     });
     const event = await instance.waitFor(
       (e) => e.event === 'loaded' || e.event === 'error',

@@ -64,6 +64,30 @@ export interface EnvProgressEvent {
 
 export type DevicePreference = 'auto' | 'cuda' | 'cpu';
 export type PrecisionPreference = 'auto' | 'fp16' | 'fp32';
+/**
+ * Low-VRAM mode parks conditioners on the CPU and decodes in smaller chunks:
+ * the difference between fitting and OOM on an 8 GB card, and a plain slowdown
+ * on a 24 GB one. 'auto' decides per load from the card and the model, so a
+ * big card gets its speed without anyone finding the switch.
+ */
+export type LowVramPreference = 'auto' | 'on' | 'off';
+
+/** Auto turns low-VRAM mode on when the card has less than this many times the model's estimate. */
+export const LOW_VRAM_HEADROOM = 2;
+
+/**
+ * Resolve the preference into what the worker is told. Unknown card size
+ * (CPU-only, or the worker not started yet) errs on the side of fitting.
+ */
+export function resolveLowVram(
+  preference: LowVramPreference,
+  modelVramGb: number,
+  vramTotalBytes: number | null
+): boolean {
+  if (preference !== 'auto') return preference === 'on';
+  if (vramTotalBytes === null || modelVramGb <= 0) return true;
+  return vramTotalBytes < modelVramGb * LOW_VRAM_HEADROOM * 1024 ** 3;
+}
 
 export interface AppSettings {
   /** Unload the model after this many idle minutes (0 = never). */
@@ -73,8 +97,8 @@ export interface AppSettings {
   device: DevicePreference;
   /** Pascal cards (GTX 10xx) have no bf16 and slow fp16 kernels for some ops. */
   precision: PrecisionPreference;
-  /** Low VRAM mode: cpu-offload conditioners, smaller chunking. */
-  lowVram: boolean;
+  /** Low VRAM mode: see LowVramPreference. */
+  lowVram: LowVramPreference;
   /** Pipeline used by the Generate view when none has been chosen yet. */
   defaultPipelineId: string | null;
   /** Model a new job starts on, so the picker is never empty on a fresh row. */
@@ -86,7 +110,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   stopWorkerWhenIdle: false,
   device: 'auto',
   precision: 'auto',
-  lowVram: true,
+  lowVram: 'auto',
   defaultPipelineId: null,
   defaultModelId: null,
 };

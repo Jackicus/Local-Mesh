@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import type { DevicePreference, LocalMeshPaths, PrecisionPreference } from '../../../core/types';
+import type { DevicePreference, LocalMeshPaths, LowVramPreference, PrecisionPreference } from '../../../core/types';
+import { LOW_VRAM_HEADROOM } from '../../../core/env';
 import { getModel } from '../../../core/models';
 import { Badge, Button, Card, Form, Modal, toast } from '../../components';
 import {
@@ -241,12 +242,19 @@ export const SettingsView: React.FC = () => {
             </Form.Row>
             <Form.Row
               label="Low VRAM mode"
-              description="Keeps conditioners on the CPU and decodes in smaller chunks. Slower, but the difference between fitting and OOM on 8 GB."
+              description={
+                `Keeps parts of the model on the processor and decodes in smaller pieces: slower, but the difference between finishing and running out of memory. ` +
+                `Auto turns it on when your card has less than ${LOW_VRAM_HEADROOM}× the memory the model needs.`
+              }
             >
-              <Form.Toggle
-                checked={settings.lowVram}
+              <Form.Segmented<LowVramPreference>
+                value={settings.lowVram}
                 onChange={(v) => void settingsActions.update({ lowVram: v })}
-                aria-label="Low VRAM mode"
+                options={[
+                  { value: 'auto', label: 'Auto' },
+                  { value: 'on', label: 'On' },
+                  { value: 'off', label: 'Off' },
+                ]}
               />
             </Form.Row>
           </Card>

@@ -1,11 +1,22 @@
 import fs from 'node:fs';
 import { DEFAULT_SETTINGS } from '../core/types';
-import type { AppSettings, DevicePreference, PrecisionPreference } from '../core/types';
+import type { AppSettings, DevicePreference, LowVramPreference, PrecisionPreference } from '../core/types';
 import { log } from './logger';
 import { getSettingsPath } from './paths';
 
 const DEVICES: DevicePreference[] = ['auto', 'cuda', 'cpu'];
 const PRECISIONS: PrecisionPreference[] = ['auto', 'fp16', 'fp32'];
+const LOW_VRAM: LowVramPreference[] = ['auto', 'on', 'off'];
+
+/**
+ * The setting was a boolean before it grew 'auto'. A saved `true` was the old
+ * default rather than a decision, so it becomes 'auto' (which still means on
+ * for every card that needed it); a saved `false` was a choice and stays off.
+ */
+function pickLowVram(value: unknown, fallback: LowVramPreference): LowVramPreference {
+  if (typeof value === 'boolean') return value ? 'auto' : 'off';
+  return pickEnum(value, LOW_VRAM, fallback);
+}
 /** One day; also keeps setTimeout well inside its 32-bit millisecond limit. */
 const MAX_IDLE_MINUTES = 1440;
 
@@ -32,7 +43,7 @@ export function sanitizeSettings(raw: unknown, base: AppSettings = DEFAULT_SETTI
     stopWorkerWhenIdle: has('stopWorkerWhenIdle') ? Boolean(src.stopWorkerWhenIdle) : base.stopWorkerWhenIdle,
     device: has('device') ? pickEnum(src.device, DEVICES, base.device) : base.device,
     precision: has('precision') ? pickEnum(src.precision, PRECISIONS, base.precision) : base.precision,
-    lowVram: has('lowVram') ? Boolean(src.lowVram) : base.lowVram,
+    lowVram: has('lowVram') ? pickLowVram(src.lowVram, base.lowVram) : base.lowVram,
     defaultPipelineId: has('defaultPipelineId')
       ? typeof src.defaultPipelineId === 'string' && src.defaultPipelineId
         ? src.defaultPipelineId
