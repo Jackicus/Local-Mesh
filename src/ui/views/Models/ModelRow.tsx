@@ -33,9 +33,12 @@ export const ModelRow: React.FC<ModelRowProps> = ({ model, install, state, loade
 
   // One cost, not three. Whether it runs on this card is the only other thing
   // worth saying before you have decided to install it; the graphics-memory
-  // figure behind that verdict lives in the details panel.
+  // figure behind that verdict lives in the details panel. Files that are
+  // already here are "on disk" even while the setup half is still outstanding:
+  // quoting the download size for a model that has finished downloading reads
+  // as a second bill.
   const facts = [
-    state.ready && sizeOnDisk
+    install?.weights === 'complete' && sizeOnDisk
       ? `${sizeOnDisk} on disk`
       : model.diskGb > 0
         ? `${model.diskGb} GB download`
