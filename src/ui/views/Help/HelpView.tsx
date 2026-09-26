@@ -2,12 +2,16 @@ import React from 'react';
 import { Card, Badge, Button } from '../../components';
 import {
   KeyboardIcon,
-  MailIcon,
   CheckCircleIcon,
   AlertCircleIcon,
+  ExternalLinkIcon,
+  HelpIcon,
   SparklesIcon,
 } from '../../assets/icons';
 import { APP_SHORTCUTS, getShortcutKeys } from '../../hooks';
+
+/** Where problems go. There is no support desk; the issue tracker is it. */
+const ISSUES_URL = 'https://github.com/Jackicus/Local-Mesh/issues';
 
 export const HelpView: React.FC = () => {
   return (
@@ -113,22 +117,23 @@ export const HelpView: React.FC = () => {
         {/* 4. Support */}
         <Card
           title="Still stuck"
-          subtitle="Get in touch"
-          icon={<MailIcon size={20} />}
+          subtitle="Report it on GitHub"
+          icon={<HelpIcon size={20} />}
           action={
             <Button
               size="sm"
               variant="secondary"
-              icon={<MailIcon size={14} />}
-              onClick={() => window.open('mailto:support@example.com')}
+              icon={<ExternalLinkIcon size={14} />}
+              onClick={() => void window.electronAPI?.openExternal(ISSUES_URL)}
             >
-              Contact Support
+              Report a problem
             </Button>
           }
         >
           <p className="setting-description">
             Reloading the window with <kbd>{getShortcutKeys('reload-window') || 'Ctrl + R'}</kbd> is safe and clears
-            most oddities. If that does not help, send us a note and say what you were doing.
+            most oddities. If that does not help, open an issue, say what you were doing, and paste the last few
+            lines from the Logs panel.
           </p>
         </Card>
       </div>
