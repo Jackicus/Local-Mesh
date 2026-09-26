@@ -345,6 +345,38 @@ function restoreJob(raw: unknown, fallbackModelId: string | null): GenerationJob
 }
 
 /**
+ * Delete the job folders nothing refers to any more. Every job owns
+ * inputs/<id> and cache/<id>; Save and Delete remove them, but a crash between
+ * dropping the row and removing the folder, or a row from before the folders
+ * were cleaned up at all, leaves them behind for good — and a cache folder is
+ * a whole mesh. Only called once the queue file has actually been read, or is
+ * genuinely absent: a file that failed to parse says nothing about which
+ * folders are orphans, and deleting on that evidence would delete real work.
+ */
+function sweepOrphanedJobDirs(knownIds: ReadonlySet<string>): void {
+  const paths = getPaths();
+  let removed = 0;
+  for (const root of [paths.inputs, paths.cache]) {
+    let entries: string[];
+    try {
+      entries = fs.readdirSync(root);
+    } catch {
+      continue;
+    }
+    for (const name of entries) {
+      if (!/^job-[\w-]+$/.test(name) || knownIds.has(name)) continue;
+      try {
+        fs.rmSync(path.join(root, name), { recursive: true, force: true });
+        removed += 1;
+      } catch (err) {
+        log.general.warn(`could not remove the leftover job folder ${name}: ${err instanceof Error ? err.message : err}`);
+      }
+    }
+  }
+  if (removed) log.general.info(`removed ${removed} leftover job folder${removed === 1 ? '' : 's'}`);
+}
+
+/**
  * Read the job list back. Called once, after the directory tree exists and the
  * logger is up. `fallbackModelId` fills in a draft whose model is missing from
  * the file entirely — a hand-edited entry, or one written before a model id
@@ -358,6 +390,9 @@ export function loadJobs(fallbackModelId: string | null): void {
     const code = (err as NodeJS.ErrnoException).code;
     if (code !== 'ENOENT') {
       log.general.warn(`queue.json unreadable, starting with an empty queue: ${err instanceof Error ? err.message : err}`);
+    } else {
+      // No queue file means no jobs, so every job folder is a leftover.
+      sweepOrphanedJobDirs(new Set());
     }
     loaded = true;
     return;
@@ -381,6 +416,7 @@ export function loadJobs(fallbackModelId: string | null): void {
     }
   }
   state.jobs = jobs;
+  sweepOrphanedJobDirs(seen);
   // Set before the first broadcast and whatever else happens: until this is
   // true nothing is written back, which is what stops an unread file from
   // being overwritten with an empty list.
