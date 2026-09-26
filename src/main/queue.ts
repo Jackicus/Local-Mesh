@@ -14,6 +14,7 @@ import {
   jobStem,
   jobTitle,
   MESH_OP_DEFINITIONS,
+  MODELS,
   newId,
   normalizeDraft,
   normalizeMeshOp,
@@ -501,14 +502,21 @@ function installedModelIds(): Set<string> {
 
 /**
  * What a brand-new row starts on. The user's choice first; failing that the
- * first model that is actually installed, so a fresh install lands on something
- * runnable rather than on an empty picker. Null is a valid answer — the row
- * then says "Choose a model" and that is the whole of the first-run prompt.
+ * first real model that is actually installed, so a fresh install lands on
+ * something runnable rather than on an empty picker; failing that, the model
+ * the registry recommends, installed or not — the row then says it is not
+ * installed and points at Models, which is the whole of the first-run prompt.
+ *
+ * The test shape is never picked here. It is always "ready", so it used to be
+ * what a first picture landed on, and a first Start that answers a photo with
+ * a torus knot reads as the app being broken.
  */
-function defaultModelId(): string | null {
+export function defaultModelId(): string | null {
   const preferred = getSettings().defaultModelId;
   if (preferred && getModel(preferred)) return preferred;
-  return listModels().find((m) => m.ready)?.id ?? null;
+  const installed = listModels().find((m) => m.ready && getModel(m.id)?.hfRepo);
+  if (installed) return installed.id;
+  return MODELS.find((m) => m.tags.includes('recommended'))?.id ?? null;
 }
 
 function jobDirs(jobId: string): { inputDir: string; cacheDir: string } {

@@ -2,8 +2,11 @@ import React, { useRef } from 'react';
 import { MESH_OP_DEFINITIONS } from '../../../core/types';
 import { currentRevision } from '../../../core/generation';
 import { jobTitle } from '../../../core/jobs';
-import { ImagePlusIcon, LoaderIcon, MeshIcon } from '../../assets/icons';
+import { ImagePlusIcon, LoaderIcon, MeshIcon, PackageIcon } from '../../assets/icons';
+import { dockStore } from '../../stores/dockStore';
 import { useGenerationStore } from '../../stores/generationStore';
+import { useModelStore } from '../../stores/modelStore';
+import { useInstalledModels } from './installedModels';
 import { useThreeScene } from './useThreeScene';
 import { useViewerStore } from './viewerStore';
 import { pickImages } from './imageInput';
@@ -28,6 +31,15 @@ export const Scene: React.FC = () => {
   const job = gen.jobs.find((j) => j.id === viewer.selectedJobId) ?? null;
   const revision = job ? currentRevision(job) : null;
   const empty = !viewer.loaded && !viewer.loading;
+
+  // First run: nothing real is installed, so a picture would only make a row
+  // that says "not installed". Ask for the model first, in the one place a new
+  // user is guaranteed to be looking. The test shape does not count — it is
+  // for checking the plumbing, not for a first result — and an unhydrated
+  // store is not "nothing installed", it is "not known yet".
+  const [models] = useModelStore();
+  const installed = useInstalledModels();
+  const needsModel = models.hydrated && !installed.some((m) => m.hfRepo !== '');
 
   const step = revision
     ? revision.op
@@ -67,18 +79,32 @@ export const Scene: React.FC = () => {
         <div className="gen-empty">
           <MeshIcon size={34} strokeWidth={1.1} />
           <p className="gen-empty-title">Turn a picture into a shape</p>
-          <p className="gen-empty-hint">Drop one anywhere in this window and it becomes a job below.</p>
-          <button
-            type="button"
-            className="gen-empty-pick"
-            onClick={async () => {
-              const paths = await pickImages();
-              if (paths.length > 0) void generation.addJobs(paths);
-            }}
-          >
-            <ImagePlusIcon size={14} />
-            Choose a picture
-          </button>
+          {needsModel ? (
+            <>
+              <p className="gen-empty-hint">
+                First, install a model — the part that does the work. One download, and you only do it once.
+              </p>
+              <button type="button" className="gen-empty-pick" onClick={() => dockStore.setActiveItem('models')}>
+                <PackageIcon size={14} />
+                Install a model
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="gen-empty-hint">Drop one anywhere in this window and it becomes a job below.</p>
+              <button
+                type="button"
+                className="gen-empty-pick"
+                onClick={async () => {
+                  const paths = await pickImages();
+                  if (paths.length > 0) void generation.addJobs(paths);
+                }}
+              >
+                <ImagePlusIcon size={14} />
+                Choose a picture
+              </button>
+            </>
+          )}
         </div>
       )}
     </>

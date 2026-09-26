@@ -9,11 +9,10 @@ import { registerAllHandlers } from './ipc';
 import { loadJobs } from './jobStore';
 import { initLogger, installCrashLogging, log } from './logger';
 import { migrateSplitWeights } from './migrateWeights';
-import { killDownloadChildren, listModels } from './modelManager';
+import { killDownloadChildren } from './modelManager';
 import { ensureTree, getPaths } from './paths';
 import { ensureDefaultPipeline } from './pipelines';
-import { shutdownQueue } from './queue';
-import { getSettings } from './settings';
+import { defaultModelId, shutdownQueue } from './queue';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -399,7 +398,7 @@ app.whenReady().then(() => {
   // not saved or thrown away yet. Read it back before any window can ask for
   // the queue, and before the first broadcast overwrites the file with nothing.
   try {
-    loadJobs(getSettings().defaultModelId ?? listModels().find((m) => m.ready)?.id ?? null);
+    loadJobs(defaultModelId());
   } catch (err) {
     log.general.error(
       `the saved job queue could not be read: ${err instanceof Error ? err.message : String(err)}. ` +
