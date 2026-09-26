@@ -81,9 +81,7 @@ export const Scene: React.FC = () => {
           <p className="gen-empty-title">Turn a picture into a shape</p>
           {needsModel ? (
             <>
-              <p className="gen-empty-hint">
-                First, install a model — the part that does the work. One download, and you only do it once.
-              </p>
+              <p className="gen-empty-hint">Install a model first. It does the work, and you only download it once.</p>
               <button type="button" className="gen-empty-pick" onClick={() => dockStore.setActiveItem('models')}>
                 <PackageIcon size={14} />
                 Install a model
