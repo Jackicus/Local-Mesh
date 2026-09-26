@@ -2,7 +2,7 @@
   "name": "local-mesh",
   "productName": "Local Mesh",
   "version": "0.1.0",
-  "description": "Local Mesh - desktop app built on Electron, React, Vite, TypeScript",
+  "description": "Turn a picture into a 3D mesh on your own graphics card. Local, offline, no account.",
   "main": "dist-electron/main.js",
   "type": "module",
   "scripts": {
@@ -12,13 +12,12 @@
     "sync-skills": "node scripts/sync-skills.mjs"
   },
   "keywords": [
+    "3d",
+    "mesh",
+    "image-to-3d",
+    "hunyuan3d",
+    "triposr",
     "electron",
-    "react",
-    "vite",
-    "typescript",
-    "template",
-    "modern-css",
-    "oklch",
     "desktop-app"
   ],
   "author": "",
