@@ -1,21 +1,21 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Tooltip } from '../../components';
-import { HomeIcon } from '../../assets/icons';
 import { useGenerationStore } from '../../stores/generationStore';
 import { CameraGizmo } from './CameraGizmo';
+import { MeshStats } from './MeshStats';
 import { QueueStack } from './QueueStack';
 import { Scene } from './Scene';
 import { ToolPlates } from './ToolPlates';
-import { ViewOptions } from './ViewOptions';
+import { ViewTools } from './ViewTools';
+import { JobHeader } from './JobHeader';
+import { useQueueWidth } from './queueWidth';
 import { dragHasFiles, imagePathsFromDrop } from './imageInput';
 import { useViewerStore } from './viewerStore';
 
 /**
  * Full-bleed: the viewport is the screen and everything else floats over it —
- * the navigator top right, the queue bottom left, the Start control and the
- * tool plates bottom right. The negative margins undo `.shell-content`'s
- * padding so the canvas reaches the window edges while the overlays stay clear
- * of the titlebar.
+ * the dial and its view buttons top right; bottom left the queue, with the
+ * selected mesh's history and size stacked above it; Start and the tool plates
+ * bottom right. The top of the screen is left to the model.
  *
  * Nothing here asks the user to set anything up. A model that is not installed
  * is a problem with one job, and the job says so on its own row; the middle of
@@ -23,6 +23,8 @@ import { useViewerStore } from './viewerStore';
  */
 export const GenerateView: React.FC = () => {
   const [, viewerActions] = useViewerStore();
+  const leftRef = useRef<HTMLDivElement>(null);
+  const queueWidth = useQueueWidth(leftRef);
   const [gen, generation] = useGenerationStore();
   const [dragging, setDragging] = useState(false);
   // dragenter/dragleave fire for every child; count them so crossing an
@@ -66,24 +68,29 @@ export const GenerateView: React.FC = () => {
       {/* Where the camera is, the way back, and how the scene is drawn. */}
       <div className="gen-navigator">
         <CameraGizmo />
-        <div className="gen-navtools">
-          <ViewOptions />
-          <Tooltip content="Reset camera" position="bottom" align="end">
-            <button
-              type="button"
-              className="gen-tool gen-home"
-              aria-label="Reset camera"
-              onClick={viewerActions.resetCamera}
-            >
-              <HomeIcon size={15} />
-            </button>
-          </Tooltip>
-        </div>
+        <ViewTools />
       </div>
 
-      {/* One band, so the queue and the tools can never overlap. */}
+      {/* One band, so the queue and the tools can never overlap. The left of
+          it is a column read bottom-up: the queue, the selected mesh's
+          history above it, and its size above that — so the top of the
+          screen belongs to the model. The column's width is the user's,
+          dragged from its right edge. */}
       <div className="gen-hud">
-        <QueueStack />
+        <div
+          className={`gen-left ${queueWidth.resizing ? 'is-resizing' : ''}`}
+          ref={leftRef}
+          style={{ '--gen-queue-width': `${queueWidth.width}px` } as React.CSSProperties}
+        >
+          <MeshStats />
+          <JobHeader />
+          <QueueStack />
+          <div
+            className="gen-queue-resizer"
+            title="Drag to resize · double-click to reset"
+            {...queueWidth.handleProps}
+          />
+        </div>
         <ToolPlates />
       </div>
 

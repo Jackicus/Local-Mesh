@@ -1,22 +1,22 @@
 import React, { useEffect, useRef, useState } from 'react';
 import type { GenerationJob } from '../../../core/types';
-import { MESH_OP_DEFINITIONS } from '../../../core/types';
 import { currentRevision } from '../../../core/generation';
 import { imageStem, jobTitle } from '../../../core/jobs';
+import { getModel } from '../../../core/models';
 import { toast } from '../../components';
 import {
   AlertCircleIcon,
   CancelIcon,
   CheckIcon,
-  ChevronDownIcon,
   DownloadIcon,
   LoaderIcon,
   RefreshIcon,
   TrashIcon,
 } from '../../assets/icons';
 import { generationStore } from '../../stores/generationStore';
+import { usePipelineStore } from '../../stores/pipelineStore';
 import { Thumbnail } from './Thumbnail';
-import { formatCount, formatElapsed } from './format';
+import { formatElapsed } from './format';
 
 export interface FinishedJobProps {
   job: GenerationJob;
@@ -27,12 +27,10 @@ export interface FinishedJobProps {
 /**
  * A job that has stopped running, on the shelf above the work still to come.
  *
- * Its four controls are back, forward, save and delete, and the first two are
- * the reason the cache exists: twenty passes of fine editing cost one output
- * file, not twenty. Chevrons alone would be two mysteries, so the readout
- * between them names the revision — what made it, and where it sits in the
- * chain — which is also how the modifier chips on a draft read once they have
- * actually run.
+ * Deliberately short: a name, what made it, how long it took, save and delete. Its history —
+ * the reason the cache exists, since twenty passes of fine editing cost one
+ * output file, not twenty — is drawn on the timeline under the selected mesh's
+ * name, not here, because it belongs to the thing being looked at.
  *
  * Save is the only thing that writes into the outputs folder, and it ends the
  * job: the mesh is kept, the cache goes, the row leaves. Delete ends it
@@ -42,9 +40,14 @@ export interface FinishedJobProps {
 export const FinishedJob: React.FC<FinishedJobProps> = ({ job, selected, onSelect }) => {
   const draft = job.draft;
   const revision = currentRevision(job);
-  const total = job.revisions.length;
   const failed = job.status === 'failed' || job.status === 'cancelled';
   const editing = job.editing !== null;
+  const [pipelines] = usePipelineStore();
+  const source = draft.source;
+  const madeBy =
+    source.kind === 'pipeline'
+      ? (pipelines.list.find((p) => p.id === source.pipelineId)?.name ?? 'Pipeline')
+      : (getModel(source.modelId)?.name ?? source.modelId);
 
   const [name, setName] = useState(draft.name);
   const committed = useRef(draft.name);
@@ -84,14 +87,6 @@ export const FinishedJob: React.FC<FinishedJobProps> = ({ job, selected, onSelec
     const path = await generationStore.save(job.id);
     if (path) toast.success(`Saved ${path.split(/[\\/]/).pop()}`);
   };
-
-  const step = (delta: number) => void generationStore.setCursor(job.id, job.cursor + delta);
-
-  const revisionLabel = revision
-    ? revision.op
-      ? MESH_OP_DEFINITIONS[revision.op.op].short
-      : 'Generated'
-    : '—';
 
   return (
     <li
@@ -139,41 +134,14 @@ export const FinishedJob: React.FC<FinishedJobProps> = ({ job, selected, onSelec
           </button>
         </>
       ) : (
-        <span className="gen-steps" role="group" aria-label="Revision">
-          <button
-            type="button"
-            className="gen-step"
-            disabled={job.cursor <= 0 || editing}
-            aria-label="Back one edit"
-            title="Back one edit"
-            onClick={() => step(-1)}
-          >
-            <ChevronDownIcon size={13} className="gen-step-left" />
-          </button>
-          <span className="gen-steps-read">
-            <span className="gen-steps-op">{revisionLabel}</span>
-            <span className="gen-steps-count">
-              {total > 0 ? `${job.cursor + 1} of ${total}` : '—'}
-            </span>
+        <>
+          <span className="gen-done-model" title={`Made with ${madeBy}`}>
+            {madeBy}
           </span>
-          <button
-            type="button"
-            className="gen-step"
-            disabled={job.cursor >= total - 1 || editing}
-            aria-label="Forward one edit"
-            title="Forward one edit"
-            onClick={() => step(1)}
-          >
-            <ChevronDownIcon size={13} className="gen-step-right" />
-          </button>
-        </span>
-      )}
-
-      {revision && (
-        <span className="gen-done-stats" title={`${formatCount(revision.vertices)} vertices`}>
-          {formatCount(revision.faces)} faces
-          {job.finishedAt ? ` · ${formatElapsed(job.finishedAt - (job.startedAt ?? job.createdAt))}` : ''}
-        </span>
+          <span className="gen-done-stats" title="How long it took to generate">
+            {job.finishedAt ? formatElapsed(job.finishedAt - (job.startedAt ?? job.createdAt)) : ''}
+          </span>
+        </>
       )}
 
       {!failed && (

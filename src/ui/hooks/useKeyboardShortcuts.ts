@@ -74,6 +74,23 @@ export const APP_SHORTCUTS: ShortcutDefinition[] = [
     category: 'Navigation',
     handler: () => dockStore.toggleBottom(),
   },
+  // Bound by the Generate view's header, not here: they only mean something
+  // while a mesh with a history is on screen, and must not eat a text field's
+  // own undo.
+  {
+    id: 'history-back',
+    description: 'Step back through the mesh history',
+    keys: formatShortcutKeys({ key: 'z', ctrlOrMeta: true }),
+    type: 'registered',
+    category: 'General',
+  },
+  {
+    id: 'history-forward',
+    description: 'Step forward through the mesh history',
+    keys: formatShortcutKeys({ key: 'z', ctrlOrMeta: true, shiftKey: true }),
+    type: 'registered',
+    category: 'General',
+  },
 
   // 2. System & Window Defaults (Runtime & desktop chrome defaults)
   {

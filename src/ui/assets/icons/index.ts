@@ -112,6 +112,8 @@ export {
   PaintBucket as FillHolesIcon,
   ArrowUpFromDot as NormalsIcon,
   Undo2 as UndoIcon,
+  ArrowLeft as ArrowLeftIcon,
+  ArrowRight as ArrowRightIcon,
   Timer as TimerIcon,
   Camera as CameraIcon,
   GripVertical as GripVerticalIcon,

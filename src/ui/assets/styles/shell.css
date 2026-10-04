@@ -57,6 +57,31 @@
     gap: 8px;
   }
 
+  /* Where a view's own titlebar controls land (see shell/topBarSlot.ts). */
+  .top-bar-slot {
+    position: absolute;
+    top: 5px;
+    bottom: 5px;
+    display: flex;
+    align-items: stretch;
+    gap: 2px;
+    transition: left var(--transition-base);
+  }
+
+  /* Centred on the window, like a title bar's title; narrow enough to stay
+     clear of the start slot and the window controls. */
+  .top-bar-slot-center {
+    left: 50%;
+    justify-content: center;
+    max-width: 40%;
+    transform: translateX(-50%);
+    transition: none;
+  }
+
+  .top-bar-slot:empty {
+    display: none;
+  }
+
   .top-bar-center {
     flex: 1;
     pointer-events: none;
@@ -149,10 +174,14 @@
      Left Dock (full window height; its colour shows behind the titlebar's
      left controls. Collapses to zero width.)
      -------------------------------------------------------------------------- */
+  /* An overlay, not a column: the content runs the full window width beneath
+     it, so opening the dock never resizes a full-bleed canvas. */
   .left-dock {
-    position: relative;
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
     z-index: var(--z-left-dock);
-    flex-shrink: 0;
     width: var(--leftdock-width);
     height: 100%;
     padding-top: var(--topbar-height);
@@ -415,8 +444,13 @@
     min-width: 0;
     height: 100%;
     overflow-y: auto;
-    padding: calc(var(--topbar-height) + 20px) 24px 24px;
+    padding: calc(var(--topbar-height) + 20px) 24px 24px calc(24px + var(--dock-inset, 0px));
     background-color: var(--bg-app);
+    transition: padding-left var(--transition-base);
+  }
+
+  .app-shell:has(.left-dock.is-resizing) .shell-content {
+    transition: none;
   }
 
   /* --------------------------------------------------------------------------

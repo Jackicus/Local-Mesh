@@ -41,6 +41,7 @@ import { errorMessage } from './proc';
 import {
   addJobs,
   applyJobEdit,
+  reviseJobEdit,
   cancelGeneration,
   loadModel,
   onSettingsChanged,
@@ -155,6 +156,9 @@ export function registerAllHandlers(): void {
   handle(IPC_CHANNELS.GEN_REMOVE_JOB, (jobId: string) => removeJob(jobId));
   handle(IPC_CHANNELS.GEN_SET_CURSOR, (jobId: string, cursor: number) => setJobCursor(jobId, cursor));
   handle(IPC_CHANNELS.GEN_APPLY_EDIT, (jobId: string, op: MeshOp) => applyJobEdit(jobId, op));
+  handle(IPC_CHANNELS.GEN_REVISE_EDIT, (jobId: string, index: number, op: MeshOp | null) =>
+    reviseJobEdit(jobId, index, op)
+  );
   handle(IPC_CHANNELS.GEN_SAVE_JOB, (jobId: string) => saveJob(jobId));
   handle(IPC_CHANNELS.GEN_LOAD_MODEL, (modelId: string) => loadModel(modelId));
   handle(IPC_CHANNELS.GEN_UNLOAD_MODEL, () => unloadModel());

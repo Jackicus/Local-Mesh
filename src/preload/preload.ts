@@ -81,6 +81,8 @@ const electronAPI: ElectronAPI = {
   setJobCursor: (jobId: string, cursor: number) =>
     ipcRenderer.invoke(IPC_CHANNELS.GEN_SET_CURSOR, jobId, cursor),
   applyJobEdit: (jobId: string, op: MeshOp) => ipcRenderer.invoke(IPC_CHANNELS.GEN_APPLY_EDIT, jobId, op),
+  reviseJobEdit: (jobId: string, index: number, op: MeshOp | null) =>
+    ipcRenderer.invoke(IPC_CHANNELS.GEN_REVISE_EDIT, jobId, index, op),
   saveJob: (jobId: string) => ipcRenderer.invoke(IPC_CHANNELS.GEN_SAVE_JOB, jobId),
   loadModel: (modelId: string) => ipcRenderer.invoke(IPC_CHANNELS.GEN_LOAD_MODEL, modelId),
   unloadModel: () => ipcRenderer.invoke(IPC_CHANNELS.GEN_UNLOAD_MODEL),

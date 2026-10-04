@@ -31,7 +31,7 @@ const AXES: Axis[] = [
 ];
 
 /** Half the plate, in px: everything below is laid out from the centre outwards. */
-const RADIUS = 27;
+const RADIUS = 36;
 
 // Scratch objects: the pose channel fires every frame, so nothing is allocated
 // inside the update.

@@ -42,21 +42,22 @@
        ground in both themes. */
     --gen-inset-bg: oklch(from var(--bg-app) l c h / 0.6);
 
-    --gen-queue-width: 620px;
+    --gen-queue-width: 560px;
     --gen-panel-w: 236px;
     /* The dial's plate, and the circle the axis handles are laid out on.
        --gen-gizmo-core must match RADIUS * 2 in CameraGizmo.tsx. */
-    --gen-gizmo-size: 84px;
-    --gen-gizmo-core: 54px;
+    --gen-gizmo-size: 112px;
+    --gen-gizmo-core: 72px;
   }
 
-  /* Escape .shell-content's padding so the canvas reaches the window edges;
-     the overlays below keep themselves clear of the titlebar. */
+  /* The whole window, under the titlebar and under the left dock: the dock
+     overlays the scene rather than squeezing it, so the canvas never resizes
+     when it opens or closes. The overlays below keep themselves clear of the
+     titlebar, and of the dock by --dock-inset. */
   .gen-view {
-    position: relative;
-    height: 100vh;
-    min-width: 0;
-    margin: calc(-1 * (var(--topbar-height) + 20px)) -24px -24px;
+    --gen-left: calc(var(--dock-inset, 0px) + var(--gen-inset));
+    position: fixed;
+    inset: 0;
     overflow: hidden;
   }
 
@@ -88,8 +89,7 @@
   .gen-panel,
   .gen-plate,
   .gen-scene-note,
-  .gen-navigator,
-  .gen-viewopts-panel {
+  .gen-viewtool {
     background-color: var(--gen-plate-bg);
     backdrop-filter: var(--plate-blur);
     border: 1px solid var(--plate-border);
@@ -101,10 +101,7 @@
   .gen-panel-title,
   .gen-band-label,
   .gen-band-count,
-  .gen-plate-stats,
-  .gen-plate-step,
   .gen-output-meta,
-  .gen-switch-hint,
   .gen-choice-meta {
     font-family: var(--font-mono);
     font-size: 0.688rem;
@@ -127,59 +124,264 @@
   }
 
   /* --------------------------------------------------------------------------
-     Viewport overlays: caption, loading note, empty state
+     Viewport overlays: the header (history arrows, title block, timeline),
+     loading note, empty state
      -------------------------------------------------------------------------- */
-  .gen-plate,
-  .gen-scene-note {
-    position: absolute;
-    top: calc(var(--topbar-height) + var(--gen-inset));
-    left: var(--gen-inset);
+
+  /* The history plate (and the loading note), sitting on the queue. It fits
+     its tiles rather than the column, so a short history is a short plate. */
+  .gen-head {
     display: flex;
-    gap: var(--gen-s4);
-    align-items: center;
-    padding: 7px var(--gen-s4);
-    border-radius: var(--radius-md);
-    max-width: min(420px, calc(100% - var(--gen-gizmo-size) - var(--gen-inset) * 4));
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--gen-s3);
+    max-width: 100%;
   }
 
-  .gen-scene-note {
-    pointer-events: none;
+  .gen-head:empty {
+    display: none;
   }
 
-  /* The caption is a control: it names the selected job, and pressing it goes
-     to that job's row — the same trip a click on the mesh makes. */
+  /* Back and forward, portalled into the titlebar (TopBar's view slot) so
+     they read as undo for the whole view. Plain, like the dock toggle beside
+     them; they live outside .gen-view, so nothing here may lean on its tokens. */
+  .gen-history-btn:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+
   .gen-plate {
-    text-align: start;
-    transition: border-color var(--transition-fast), background-color var(--transition-fast);
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    max-width: 100%;
+    border-radius: var(--radius-md);
+    transition: border-color var(--transition-fast);
   }
 
-  .gen-plate:hover {
-    border-color: var(--accent);
-  }
-
-  .gen-plate-name {
+  /* The selected job's name, portalled into the middle of the titlebar. A
+     control: pressing it goes to that job's row, the same trip a click on the
+     mesh makes. It lives outside .gen-view, so no --gen-* tokens here. */
+  .gen-title {
+    min-width: 0;
+    max-width: 100%;
+    padding: 0 10px;
+    border-radius: var(--radius-md);
     font-size: 0.857rem;
     font-weight: 600;
     color: var(--text-primary);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    transition: background-color var(--transition-fast), color var(--transition-fast);
   }
 
-  /* Which revision is on screen, in the accent because it is the one thing
-     here that changes under your hands. */
-  .gen-plate-step {
+  .gen-title:hover {
+    background-color: var(--bg-surface-hover);
+  }
+
+  .gen-plate-progress {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gen-s1);
+    padding: var(--gen-s3) var(--gen-s4);
+  }
+
+  .gen-timeline + .gen-plate-progress {
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  .gen-plate-progress-line {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--gen-s3);
+  }
+
+  /* The timeline: one tile per step, a rail under them that is also the
+     scrubber. Scrolls sideways inside the plate once the history outgrows it. */
+  .gen-timeline {
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    /* Dragging the handle scrolls it, and so does the wheel; a scrollbar
+       would be a second rail under the real one. */
+    scrollbar-width: none;
+    padding: var(--gen-s3) var(--gen-s3) var(--gen-s1);
+  }
+
+  .gen-timeline-rail {
+    position: relative;
+    width: max-content;
+  }
+
+  .gen-timeline-tiles {
+    display: flex;
+    gap: var(--gen-s2);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  /* The joins between tiles: the same hairline as the rail, so the row reads
+     as one chain even before the eye reaches the handle. */
+  .gen-timeline-tiles > li {
+    position: relative;
+  }
+
+  .gen-timeline-tiles > li + li::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    right: 100%;
+    width: var(--gen-s2);
+    height: 1px;
+    background-color: var(--border-strong);
+  }
+
+  /* A square holding the op's glyph, so a long history still fits the
+     plate; the tooltip says the rest. */
+  .gen-tile {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    background-color: var(--gen-inset-bg);
+    color: var(--text-secondary);
+    transition: border-color var(--transition-fast), background-color var(--transition-fast),
+      opacity var(--transition-fast);
+  }
+
+  .gen-tile:hover:not(:disabled) {
+    border-color: var(--border-strong);
+    color: var(--text-primary);
+  }
+
+  .gen-tile:disabled {
+    cursor: default;
+  }
+
+  /* The one the viewport is drawing. */
+  .gen-tile.is-current {
+    border-color: var(--accent);
+    background-color: var(--accent-subtle);
     color: var(--accent);
-    white-space: nowrap;
   }
 
-  .gen-scene-note {
-    font-size: 0.857rem;
+  .gen-tile.is-open {
+    border-color: var(--accent);
+  }
+
+  /* Steps ahead of the handle: still there, still a click away, but not what
+     is on screen or what Save would write. */
+  .gen-tile.is-ahead {
+    opacity: 0.5;
+  }
+
+  .gen-tile.is-ahead:hover:not(:disabled) {
+    opacity: 0.85;
+  }
+
+  .gen-track {
+    position: relative;
+    height: 18px;
+    margin-top: 2px;
+    cursor: grab;
+    touch-action: none;
+    outline: none;
+  }
+
+  .gen-track.is-dragging {
+    cursor: grabbing;
+  }
+
+  .gen-track[aria-disabled='true'] {
+    cursor: default;
+    opacity: 0.5;
+  }
+
+  .gen-track-line,
+  .gen-track-fill {
+    position: absolute;
+    top: 50%;
+    height: 2px;
+    border-radius: 1px;
+    transform: translateY(-50%);
+    background-color: var(--border-strong);
+  }
+
+  .gen-track-fill {
+    background-color: var(--accent);
+    transition: width var(--transition-fast);
+  }
+
+  .gen-track-tick,
+  .gen-track-thumb {
+    position: absolute;
+    top: 50%;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+  }
+
+  .gen-track-tick {
+    width: 6px;
+    height: 6px;
+    background-color: var(--border-strong);
+  }
+
+  .gen-track-tick.is-past {
+    background-color: var(--accent);
+  }
+
+  .gen-track-thumb {
+    width: 13px;
+    height: 13px;
+    background-color: var(--accent);
+    border: 2px solid var(--bg-surface);
+    box-shadow: 0 0 0 1px var(--accent), var(--shadow-sm);
+    transition: left var(--transition-fast);
+  }
+
+  .gen-track.is-dragging .gen-track-thumb,
+  .gen-track.is-dragging .gen-track-fill {
+    transition: none;
+  }
+
+  .gen-track:focus-visible .gen-track-thumb {
+    box-shadow: 0 0 0 1px var(--accent), 0 0 0 4px var(--accent-subtle);
+  }
+
+  /* A step, opened. */
+  .gen-step-note {
+    margin: 0;
+    font-size: 0.786rem;
+    line-height: 1.45;
     color: var(--text-secondary);
   }
 
-  .gen-plate + .gen-scene-note {
-    top: calc(var(--topbar-height) + var(--gen-inset) + 44px);
+  .gen-step-options {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gen-s2);
+  }
+
+  .gen-step-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--gen-s2);
+  }
+
+  .gen-scene-note {
+    display: flex;
+    gap: var(--gen-s4);
+    align-items: center;
+    padding: 7px var(--gen-s4);
+    border-radius: var(--radius-md);
+    font-size: 0.857rem;
+    color: var(--text-secondary);
+    pointer-events: none;
   }
 
   .gen-spin {
@@ -196,6 +398,7 @@
   .gen-empty {
     position: absolute;
     inset: 0;
+    left: var(--dock-inset, 0px);
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -287,65 +490,92 @@
   }
 
   /* --------------------------------------------------------------------------
-     Navigator: one plate, not three chips
+     Navigator: the dial, bare on the scene, and four square buttons under it
 
-     The dial, the view switches and the way home used to be three separate
-     frosted tiles stacked down the right edge, which read as clutter rather
-     than as an instrument. They are one plate now — dial above, its two tools
-     side by side beneath a hairline — so the corner holds a single object with
-     three parts instead of three objects with nothing in common.
+     No plate: the dial is drawn in the axis colours the floor grid uses, so it
+     reads as part of the scene rather than as chrome laid over it. The buttons
+     under it are the timeline's tiles, each frosted on its own.
      -------------------------------------------------------------------------- */
   .gen-navigator {
     position: absolute;
-    top: calc(var(--topbar-height) + var(--gen-inset));
-    right: var(--gen-inset);
+    top: calc(var(--topbar-height) + 24px);
+    right: 28px;
     /* Below the HUD band: a tall tool panel opening upward must not be
-       covered by the dial. Its own popover is the exception. */
+       covered by the dial. */
     z-index: 1;
     display: flex;
     flex-direction: column;
     align-items: center;
+    gap: var(--gen-s4);
+  }
+
+  .gen-viewtools {
+    display: flex;
     gap: var(--gen-s2);
-    padding: var(--gen-s2) var(--gen-s2) var(--gen-s1);
-    border-radius: var(--radius-lg);
   }
 
-  .gen-navigator:has(.gen-viewopts.is-open) {
-    z-index: 3;
-  }
-
-  .gen-navtools {
+  .gen-viewtool {
     display: flex;
     align-items: center;
-    gap: var(--gen-s1);
-    width: 100%;
-    padding-top: var(--gen-s1);
-    border-top: 1px solid var(--border-subtle);
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    transition: border-color var(--transition-fast), background-color var(--transition-fast),
+      color var(--transition-fast);
   }
 
-  .gen-navtools > * {
-    flex: 1;
+  .gen-viewtool:hover {
+    border-color: var(--border-strong);
+    color: var(--text-primary);
   }
 
-  /* How the scene is drawn, docked with the dial that says where it is seen from */
-  .gen-viewopts {
-    position: relative;
+  .gen-viewtool:active {
+    transform: scale(0.94);
+  }
+
+  /* A switch that is on looks like the timeline's current step. */
+  .gen-viewtool.is-on {
+    border-color: var(--accent);
+    background-color: var(--accent-subtle);
+    color: var(--accent);
+  }
+
+  /* The mesh's size, top of the bottom-left column: bare text over the scene,
+     the count bright and its label quiet, in the readouts' mono voice. */
+  .gen-meshstats {
     display: flex;
+    align-items: baseline;
+    gap: var(--gen-s4);
+    margin: 0;
+    padding: 0 var(--gen-s1);
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    pointer-events: none;
+    text-shadow: 0 1px 6px var(--bg-app);
   }
 
-  /* Drops below the cluster rather than out to its left: the caption for
-     whatever is in the viewport runs along that edge, and a panel opening into
-     it would cover the name of the thing the panel is about. */
-  .gen-viewopts-panel {
-    position: absolute;
-    top: calc(100% + var(--gen-s3));
-    right: calc(-1 * var(--gen-s2));
-    z-index: 4;
-    width: var(--gen-panel-w);
-    max-width: calc(100vw - var(--gen-inset) * 4);
-    padding: var(--gen-s4);
-    border-radius: var(--radius-md);
-    animation: gen-rise var(--transition-base) both;
+  .gen-meshstats div {
+    display: flex;
+    align-items: baseline;
+    gap: var(--gen-s2);
+  }
+
+  .gen-meshstats dd {
+    order: -1;
+    margin: 0;
+    font-size: 0.929rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .gen-meshstats dt {
+    font-size: 0.688rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    color: var(--text-muted);
   }
 
   .gen-gizmo {
@@ -408,16 +638,16 @@
   }
 
   .gen-gizmo-axis.is-positive {
-    width: 21px;
-    height: 21px;
+    width: 24px;
+    height: 24px;
     background-color: var(--axis);
     border: 1px solid oklch(from var(--axis) calc(l + 0.08) c h);
     color: oklch(0.16 0.01 265);
   }
 
   .gen-gizmo-axis.is-negative {
-    width: 11px;
-    height: 11px;
+    width: 12px;
+    height: 12px;
     border: 1.5px solid oklch(from var(--axis) l c h / 0.55);
   }
 
@@ -432,27 +662,13 @@
     border-style: dashed;
   }
 
-  /* The two tools share the width of the dial above them, so the cluster is
-     one column wide whatever is in it. Scoped to the row so it beats the
-     shared .gen-tool metrics further down the file. */
-  .gen-navtools .gen-tool {
-    width: 100%;
-    height: 26px;
-    border-radius: var(--radius-sm);
-  }
-
-  .gen-navtools .ui-tooltip-wrapper,
-  .gen-navtools .gen-viewopts {
-    flex: 1;
-    min-width: 0;
-  }
-
   /* --------------------------------------------------------------------------
      Bottom band: the queue on the left, Start and the tool plates on the right
      -------------------------------------------------------------------------- */
   .gen-hud {
     position: absolute;
-    left: var(--gen-inset);
+    left: var(--gen-left);
+    transition: left var(--transition-base);
     right: var(--gen-inset);
     /* Bounded at the top as well as the bottom: a long queue must scroll
        inside the band, not climb over the titlebar. */
@@ -480,14 +696,75 @@
        query would be guessing. */
     container-type: inline-size;
     container-name: queue;
-    flex: 1 1 var(--gen-queue-width);
-    max-width: min(var(--gen-queue-width), 64%);
+    flex: 0 1 auto;
     min-width: 0;
-    max-height: 100%;
+    min-height: 0;
     display: flex;
     flex-direction: column;
     padding: var(--gen-s2);
     border-radius: var(--radius-lg);
+  }
+
+  /* The bottom-left column: size, history, queue, read upward from the
+     queue. Its width is the user's (dragged from the right edge, see
+     queueWidth.ts); the band still keeps room for Start and the plates. Only
+     its children take the pointer, so the gaps around the history plate are
+     still the scene's to orbit. */
+  .gen-left {
+    position: relative;
+    flex: 1 1 var(--gen-queue-width);
+    max-width: min(var(--gen-queue-width), calc(100% - 340px));
+    min-width: 0;
+    max-height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    gap: var(--gen-s3);
+  }
+
+  .gen-hud > .gen-left {
+    pointer-events: none;
+  }
+
+  .gen-left > * {
+    pointer-events: auto;
+  }
+
+  .gen-left > .gen-meshstats {
+    pointer-events: none;
+  }
+
+  /* The right edge is a handle: a hairline of accent under the pointer, the
+     same as the dock's. */
+  .gen-queue-resizer {
+    position: absolute;
+    right: -3px;
+    bottom: var(--gen-s4);
+    /* The queue's edge only: the readouts above it are not a border. */
+    height: min(160px, 40%);
+    z-index: 1;
+    width: 6px;
+    cursor: ew-resize;
+    touch-action: none;
+    outline: none;
+  }
+
+  .gen-queue-resizer::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 2px;
+    width: 2px;
+    border-radius: 1px;
+    background-color: transparent;
+    transition: background-color var(--transition-fast);
+  }
+
+  .gen-queue-resizer:hover::after,
+  .gen-queue-resizer:focus-visible::after,
+  .gen-left.is-resizing .gen-queue-resizer::after {
+    background-color: var(--accent);
   }
 
   /* Two lists, each scrolling on its own, so the band rules and the + stay
@@ -1027,72 +1304,24 @@
     color: var(--danger);
   }
 
-  /* Two chevrons alone would be two mysteries; the readout between them names
-     what the current revision is and where it sits in the chain. */
-  .gen-steps {
-    flex: none;
-    display: flex;
-    align-items: center;
-    gap: 2px;
-    padding: 2px;
-    border-radius: var(--radius-sm);
+  /* What made it: a quiet tag, so a shelf of the same picture run through
+     two models can be told apart at a glance. */
+  .gen-done-model {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 150px;
+    padding: 2px var(--gen-s2);
     border: 1px solid var(--border-subtle);
-    background-color: var(--gen-inset-bg);
-  }
-
-  .gen-step {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 20px;
-    height: 20px;
-    border-radius: calc(var(--radius-sm) - 1px);
-    color: var(--text-muted);
-    transition: background-color var(--transition-fast), color var(--transition-fast);
-  }
-
-  .gen-step:hover:not(:disabled) {
-    background-color: var(--bg-surface-hover);
-    color: var(--text-primary);
-  }
-
-  .gen-step:disabled {
-    opacity: 0.35;
-    cursor: default;
-  }
-
-  .gen-step-left {
-    transform: rotate(90deg);
-  }
-
-  .gen-step-right {
-    transform: rotate(-90deg);
-  }
-
-  .gen-steps-read {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 1px;
-    min-width: 72px;
-    padding: 0 var(--gen-s1);
-    line-height: 1.1;
-  }
-
-  .gen-steps-op {
+    border-radius: var(--radius-sm);
     font-family: var(--font-mono);
     font-size: 0.625rem;
-    font-weight: 700;
+    font-weight: 600;
+    letter-spacing: 0.04em;
     text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--text-primary);
-  }
-
-  .gen-steps-count {
-    font-family: var(--font-mono);
-    font-size: 0.625rem;
-    font-variant-numeric: tabular-nums;
     color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .gen-done-stats {
@@ -1485,45 +1714,6 @@
   }
 
   /* --------------------------------------------------------------------------
-     Camera panel
-     -------------------------------------------------------------------------- */
-  .gen-switches {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gen-s1);
-  }
-
-  .gen-switch {
-    display: flex;
-    align-items: center;
-    gap: var(--gen-s3);
-    padding: var(--gen-s2);
-    border-radius: var(--radius-sm);
-  }
-
-  .gen-switch:hover {
-    background-color: var(--bg-surface-hover);
-  }
-
-  .gen-switch-icon {
-    display: flex;
-    color: var(--text-muted);
-  }
-
-  .gen-switch-text {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-  }
-
-  .gen-switch-label {
-    font-size: 0.857rem;
-    color: var(--text-primary);
-  }
-
-  /* --------------------------------------------------------------------------
      Edit panel
      -------------------------------------------------------------------------- */
   .gen-edit {
@@ -1829,6 +2019,7 @@
   .gen-veil {
     position: absolute;
     inset: var(--gen-inset);
+    left: var(--gen-left);
     top: calc(var(--topbar-height) + var(--gen-inset));
     z-index: 1;
     display: flex;
@@ -1889,9 +2080,6 @@
       display: none;
     }
 
-    .gen-steps-read {
-      min-width: 58px;
-    }
   }
 
   /* --------------------------------------------------------------------------
@@ -1922,11 +2110,16 @@
       gap: var(--gen-s3);
     }
 
-    /* The basis is a width; in a column it would become a 620px-tall plate. */
-    .gen-queue {
+    /* The basis is a width; in a column it would become a 560px-tall plate. */
+    .gen-left {
       order: 2;
       flex: 0 0 auto;
       max-width: none;
+    }
+
+    /* Full width when stacked: nothing to resize against. */
+    .gen-queue-resizer {
+      display: none;
     }
 
     .gen-plates {
@@ -1962,8 +2155,7 @@
     }
 
     .gen-panel,
-    .gen-rowpop,
-    .gen-viewopts-panel {
+    .gen-rowpop {
       animation: none;
     }
 

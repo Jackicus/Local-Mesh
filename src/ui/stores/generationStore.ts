@@ -121,7 +121,7 @@ export const generationStore = {
   /** Delete a job and its cached revisions, cancelling it first if it is running. */
   remove: (jobId: string) => api()?.removeJob(jobId),
 
-  /** Point a finished job at another of its revisions — the row's back and forward. */
+  /** Point a finished job at another of its revisions — the timeline, and back and forward. */
   setCursor: (jobId: string, cursor: number) => api()?.setJobCursor(jobId, cursor),
 
   /** Run one edit on a finished job's current revision, pushing on a new revision. */
@@ -135,6 +135,18 @@ export const generationStore = {
       return await electron.applyJobEdit(jobId, op);
     } catch (err) {
       fail(err, 'Could not apply that edit');
+      return false;
+    }
+  },
+
+  /** Change (or, with null, remove) the edit at one step and replay the steps after it. */
+  reviseEdit: async (jobId: string, index: number, op: MeshOp | null): Promise<boolean> => {
+    const electron = api();
+    if (!electron) return false;
+    try {
+      return await electron.reviseJobEdit(jobId, index, op);
+    } catch (err) {
+      fail(err, op ? 'Could not change that edit' : 'Could not remove that edit');
       return false;
     }
   },

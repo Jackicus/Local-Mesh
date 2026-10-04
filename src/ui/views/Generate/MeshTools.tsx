@@ -23,7 +23,8 @@ const initialOps = (): Record<MeshOpKind, MeshOp> =>
  * on disk and the tools would write a sibling next to it — which meant the
  * edits and the queue kept two separate ideas of what you were working on. A
  * job owns its mesh and its revisions now, so an edit here is a revision
- * there, and the row's back and forward are the undo this panel used to have.
+ * there, and the timeline under the mesh's name is the undo this panel used to
+ * have.
  *
  * A job that has not run yet is not editable here on purpose: its edits belong
  * on the row, where they run as part of the job instead of costing a second
@@ -139,8 +140,8 @@ export const MeshTools: React.FC = () => {
       </ul>
 
       <p className="gen-edit-foot">
-        Every edit adds a step you can walk back on the job&apos;s own row. Nothing is written to disk until you
-        save it.
+        Every edit adds a step to the timeline under the mesh&apos;s name, where you can walk it back or change it.
+        Nothing is written to disk until you save it.
       </p>
     </div>
   );

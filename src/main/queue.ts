@@ -27,8 +27,10 @@ import type {
   GenerationJobSpec,
   JobCompileContext,
   JobDraft,
+  JobRevision,
   MeshGeneratorData,
   MeshOp,
+  MeshOpKind,
   WorkerEvent,
 } from '../core/types';
 import { envPython, isEnvUsable } from './envManager';
@@ -885,7 +887,7 @@ export function removeJob(jobId: string): boolean {
   return true;
 }
 
-/** The row's back and forward: point the viewer at another revision. */
+/** The header timeline and its back/forward: point the viewer at another revision. */
 export function setJobCursor(jobId: string, cursor: number): boolean {
   const job = findJob(jobId);
   if (!job || job.revisions.length === 0) return false;
@@ -903,10 +905,90 @@ export function setJobCursor(jobId: string, cursor: number): boolean {
 const PROCESS_TIMEOUT_MS = 10 * 60_000;
 
 /**
+ * Hold the worker for a run of edits on one job. The worker is single-threaded,
+ * so this refuses rather than queues when anything else is using it; no model
+ * is needed and a loaded one stays loaded. `body` runs the ops, one `step` per
+ * op, and the state it leaves behind is broadcast however it ends.
+ */
+async function withEditSession<T>(
+  job: GenerationJob,
+  first: MeshOpKind,
+  body: (step: (input: string, op: MeshOp, index: number, label: string) => Promise<JobRevision>) => Promise<T>
+): Promise<T> {
+  if (state.processing) throw new Error('Another mesh is already being processed. Wait for it to finish.');
+  if (isBusy()) throw new Error('The generation queue is busy. Wait for the current job to finish.');
+
+  let requestId = newId('proc');
+  state.processing = { requestId, jobId: job.id, stage: 'load', pct: 0, message: 'Starting', startedAt: Date.now() };
+  job.editing = { op: first, pct: 0, message: 'Starting' };
+  clearIdleTimer();
+  state.idleUnloadAt = null;
+  broadcast(true);
+
+  try {
+    const instance = await ensureWorker();
+    state.worker = 'processing';
+    broadcast(true);
+
+    // One `process` request per op, because every op leaves a revision of its
+    // own behind; progress is matched on the request id, so each gets a fresh one.
+    const step = async (input: string, op: MeshOp, index: number, label: string): Promise<JobRevision> => {
+      requestId = newId('proc');
+      state.processing = { ...state.processing!, requestId, pct: 0, message: label };
+      job.editing = { op: op.op, pct: 0, message: label };
+      broadcast(true);
+
+      const ext = path.extname(input).slice(1).toLowerCase() || job.draft.format;
+      const suffix = MESH_OP_DEFINITIONS[op.op].suffix;
+      // The token keeps a replayed step from writing over the file it replaces,
+      // which has to survive until the whole replay has.
+      const token = crypto.randomBytes(3).toString('hex');
+      const output = path.join(job.cacheDir, `${jobStem(job.draft)}-${index}-${suffix}-${token}.${ext}`);
+      glog.info(`editing ${jobTitle(job.draft)}: ${describeMeshOp(op)}`, requestId);
+
+      instance.send({ cmd: 'process', request_id: requestId, input, output, ops: [op] });
+      const event = await instance.waitFor(
+        (e) =>
+          (e.event === 'processed' && e.request_id === requestId) ||
+          (e.event === 'cancelled' && e.job_id === requestId) ||
+          (e.event === 'error' && (e.request_id === requestId || (!e.request_id && !e.job_id))),
+        PROCESS_TIMEOUT_MS,
+        'mesh processing'
+      );
+      if (event.event === 'error') throw new Error(formatWorkerError(event));
+      if (event.event !== 'processed') throw new Error('The edit was cancelled.');
+      glog.info(
+        `edit applied in ${formatDuration(event.duration_ms)} → revision ${index + 1} ` +
+          `(${event.vertices} verts, ${event.faces} faces)`,
+        requestId
+      );
+      return { path: event.output, op, vertices: event.vertices, faces: event.faces, createdAt: Date.now() };
+    };
+
+    return await body(step);
+  } catch (err) {
+    // Logged here so the line carries the request id; `reported` keeps the IPC
+    // wrapper from writing the same failure again without it.
+    glog.error(`edit failed: ${errorMessage(err)}`, requestId);
+    throw reported(err);
+  } finally {
+    state.processing = null;
+    job.editing = null;
+    if (state.worker === 'processing') state.worker = worker?.alive ? 'idle' : 'stopped';
+    scheduleIdleUnload();
+    broadcast(true);
+  }
+}
+
+function dropRevisionFiles(job: GenerationJob, revisions: readonly JobRevision[]): void {
+  for (const r of revisions) {
+    if (isInside(job.cacheDir, r.path)) fs.rmSync(r.path, { force: true });
+  }
+}
+
+/**
  * Run one mesh edit on a job's current revision and push the result on as a new
- * revision. The worker is single-threaded, so this refuses rather than queues
- * when anything else is using it; no model is needed and a loaded one stays
- * loaded.
+ * revision.
  *
  * Undo semantics: an edit made while the user is looking at an earlier revision
  * branches from there. The revisions after the cursor are dropped, files and
@@ -920,74 +1002,88 @@ export async function applyJobEdit(jobId: string, op: MeshOp): Promise<boolean> 
   const source = currentRevision(job);
   if (!source) throw new Error('This job has no mesh to edit yet.');
   if (!fs.existsSync(source.path)) throw new Error('That revision is no longer in the cache folder.');
-  if (state.processing) throw new Error('Another mesh is already being processed. Wait for it to finish.');
-  if (isBusy()) throw new Error('The generation queue is busy. Wait for the current job to finish.');
 
-  if (job.cursor < job.revisions.length - 1) {
-    for (const dropped of job.revisions.slice(job.cursor + 1)) {
-      if (isInside(job.cacheDir, dropped.path)) fs.rmSync(dropped.path, { force: true });
+  return withEditSession(job, normalized.op, async (step) => {
+    if (job.cursor < job.revisions.length - 1) {
+      dropRevisionFiles(job, job.revisions.slice(job.cursor + 1));
+      job.revisions = job.revisions.slice(0, job.cursor + 1);
     }
-    job.revisions = job.revisions.slice(0, job.cursor + 1);
-  }
-
-  const ext = path.extname(source.path).slice(1).toLowerCase() || job.draft.format;
-  const suffix = MESH_OP_DEFINITIONS[normalized.op].suffix;
-  const output = path.join(job.cacheDir, `${jobStem(job.draft)}-${job.revisions.length}-${suffix}.${ext}`);
-  const requestId = newId('proc');
-
-  state.processing = { requestId, jobId: job.id, stage: 'load', pct: 0, message: 'Starting', startedAt: Date.now() };
-  job.editing = { op: normalized.op, pct: 0, message: 'Starting' };
-  clearIdleTimer();
-  state.idleUnloadAt = null;
-  broadcast(true);
-
-  try {
-    const instance = await ensureWorker();
-    state.worker = 'processing';
-    broadcast(true);
-    glog.info(`editing ${jobTitle(job.draft)}: ${describeMeshOp(normalized)}`, requestId);
-
-    instance.send({ cmd: 'process', request_id: requestId, input: source.path, output, ops: [normalized] });
-    const event = await instance.waitFor(
-      (e) =>
-        (e.event === 'processed' && e.request_id === requestId) ||
-        (e.event === 'cancelled' && e.job_id === requestId) ||
-        (e.event === 'error' && (e.request_id === requestId || (!e.request_id && !e.job_id))),
-      PROCESS_TIMEOUT_MS,
-      'mesh processing'
-    );
-    if (event.event === 'error') throw new Error(formatWorkerError(event));
-    if (event.event !== 'processed') throw new Error('The edit was cancelled.');
-
+    const revision = await step(source.path, normalized, job.revisions.length, 'Starting');
     // The row may have been deleted while the worker was busy; the file it just
     // wrote went with its cache directory, so there is nothing to record.
     if (!findJob(jobId)) return false;
-    job.revisions.push({
-      path: event.output,
-      op: normalized,
-      vertices: event.vertices,
-      faces: event.faces,
-      createdAt: Date.now(),
-    });
+    job.revisions.push(revision);
     job.cursor = job.revisions.length - 1;
+    return true;
+  });
+}
+
+/**
+ * Change one step in the middle of a job's history — or take it out, with a
+ * null op — and replay every step after it on top, so the chain still reads as
+ * what was done, in order, to the mesh at the end of it.
+ *
+ * The replay writes new files beside the old ones and only swaps them in once
+ * every step has run: a failure halfway leaves the history exactly as it was.
+ * The generated mesh (index 0) is not an edit and cannot be revised here.
+ */
+export async function reviseJobEdit(jobId: string, index: number, op: MeshOp | null): Promise<boolean> {
+  const job = findJob(jobId);
+  if (!job) return false;
+  const at = Math.round(Number(index));
+  if (!Number.isInteger(at) || at < 1 || at >= job.revisions.length) {
+    throw new Error('There is no edit at that step.');
+  }
+  const base = job.revisions[at - 1];
+  if (!fs.existsSync(base.path)) throw new Error('That revision is no longer in the cache folder.');
+
+  const later = job.revisions.slice(at + 1).map((r) => r.op);
+  if (later.some((o) => o === null)) {
+    throw new Error('A later step no longer says what it did, so it cannot be replayed.');
+  }
+  const ops = [...(op ? [normalizeMeshOp(op)] : []), ...(later as MeshOp[])];
+  const old = job.revisions.slice(at);
+  const cursor = job.cursor;
+
+  // Removing the last step replays nothing; it is a truncation, not an edit.
+  if (ops.length === 0) {
+    if (job.editing) throw new Error('This mesh is being edited. Wait for it to finish.');
+    dropRevisionFiles(job, old);
+    job.revisions = job.revisions.slice(0, at);
+    job.cursor = Math.min(cursor, job.revisions.length - 1);
+    glog.info(`edit removed from ${jobTitle(job.draft)} (step ${at + 1})`, job.id);
+    broadcast(true);
+    return true;
+  }
+
+  return withEditSession(job, ops[0].op, async (step) => {
+    const fresh: JobRevision[] = [];
+    try {
+      let input = base.path;
+      for (const [i, next] of ops.entries()) {
+        const label = ops.length > 1 ? `Step ${i + 1} of ${ops.length}` : 'Starting';
+        const revision = await step(input, next, at + i, label);
+        fresh.push(revision);
+        input = revision.path;
+      }
+    } catch (err) {
+      dropRevisionFiles(job, fresh);
+      throw err;
+    }
+    if (!findJob(jobId)) return false;
+    dropRevisionFiles(job, old);
+    job.revisions = [...job.revisions.slice(0, at), ...fresh];
+    // Stay on the step being looked at; a removed one hands over to the step
+    // before it, and everything after shifts down by one.
+    const shifted = !op && cursor >= at ? cursor - 1 : cursor;
+    job.cursor = Math.max(0, Math.min(shifted, job.revisions.length - 1));
     glog.info(
-      `edit applied in ${formatDuration(event.duration_ms)} → revision ${job.cursor + 1} ` +
-        `(${event.vertices} verts, ${event.faces} faces)`,
-      requestId
+      `${op ? 'edit changed' : 'edit removed'} at step ${at + 1} of ${jobTitle(job.draft)}` +
+        (later.length ? `; ${plural(later.length, 'later step')} replayed` : ''),
+      job.id
     );
     return true;
-  } catch (err) {
-    // Logged here so the line carries the request id; `reported` keeps the IPC
-    // wrapper from writing the same failure again without it.
-    glog.error(`edit failed: ${errorMessage(err)}`, requestId);
-    throw reported(err);
-  } finally {
-    state.processing = null;
-    job.editing = null;
-    if (state.worker === 'processing') state.worker = worker?.alive ? 'idle' : 'stopped';
-    scheduleIdleUnload();
-    broadcast(true);
-  }
+  });
 }
 
 /**

@@ -100,13 +100,19 @@ export interface ElectronAPI {
   reorderGeneration: (jobId: string, toIndex: number) => Promise<boolean>;
   /** Delete a job and its cached revisions. Cancels it first if it is still running. */
   removeJob: (jobId: string) => Promise<boolean>;
-  /** Point a finished job at another of its revisions — the row's back and forward. */
+  /** Point a finished job at another of its revisions — the header timeline and its back/forward. */
   setJobCursor: (jobId: string, cursor: number) => Promise<boolean>;
   /**
    * Run one mesh edit on a finished job's current revision and push the result
    * on as a new revision. Rejects while the queue or the worker is busy.
    */
   applyJobEdit: (jobId: string, op: MeshOp) => Promise<boolean>;
+  /**
+   * Change the edit at one step of a finished job's history — or remove it,
+   * with null — and replay every later step on top. Rejects while the queue or
+   * the worker is busy.
+   */
+  reviseJobEdit: (jobId: string, index: number, op: MeshOp | null) => Promise<boolean>;
   /**
    * Write a finished job's current revision into the outputs folder and drop
    * the job, cache and all. Returns the saved path.
@@ -190,6 +196,7 @@ export const IPC_CHANNELS = {
   GEN_REMOVE_JOB: 'gen:removeJob',
   GEN_SET_CURSOR: 'gen:setCursor',
   GEN_APPLY_EDIT: 'gen:applyEdit',
+  GEN_REVISE_EDIT: 'gen:reviseEdit',
   GEN_SAVE_JOB: 'gen:saveJob',
   GEN_LOAD_MODEL: 'gen:loadModel',
   GEN_UNLOAD_MODEL: 'gen:unloadModel',
